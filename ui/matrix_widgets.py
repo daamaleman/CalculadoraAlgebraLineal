@@ -1,9 +1,9 @@
 from PySide6.QtWidgets import QWidget, QGridLayout, QLineEdit, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QMessageBox, QTextEdit, QSpinBox
 from PySide6.QtGui import QFont
 from PySide6.QtCore import Qt
-from ..core.matrix import Matrix, parse_number
-from ..core.formatter import block_from_matrix, with_op, pretty_matrix
-from ..core.linsys import LinearSystemSolver
+from core.matrix import Matrix, parse_number
+from core.formatter import block_from_matrix, with_op, pretty_matrix
+from core.linsys import LinearSystemSolver
 from .validators import number_validator
 
 class MatrixInput(QWidget):

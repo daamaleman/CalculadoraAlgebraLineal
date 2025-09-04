@@ -1,20 +1,14 @@
 import sys
 from PySide6.QtWidgets import QApplication, QMainWindow
 from PySide6.QtGui import QFont
-from .ui.login_view import LoginView
-from .ui.home_view import HomeView
-from .ui.theme import apply_dark_theme, PRIMARY
+from ui.home_view import HomeView
+from ui.theme import apply_dark_theme, PRIMARY
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle('Calculadora de Álgebra Lineal')
         self.resize(1100, 700)
-        self.login = LoginView()
-        self.setCentralWidget(self.login)
-        self.login.authenticated.connect(self.on_auth)
-
-    def on_auth(self, user):
         self.setCentralWidget(HomeView())
 
 def main():
