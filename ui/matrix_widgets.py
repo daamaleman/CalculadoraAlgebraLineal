@@ -120,6 +120,19 @@ class AugmentedSystemWidget(QWidget):
             text = ('\n\n~\n\n').join(buffs)
             # classification
             typ = res['type']
+            # Mostrar pivotes y variables libres
+            pivots = res.get('pivot_cols', [])
+            free_vars = res.get('free_vars', [])
+            if pivots:
+                piv_str = ', '.join([str(j+1) for j in pivots])
+                text += f"\n\nColumnas pivote: {piv_str}"
+            else:
+                text += "\n\nNo hay columnas pivote."
+            if free_vars:
+                free_str = ', '.join([f"x{j+1}" for j in free_vars])
+                text += f"\nVariables libres: {free_str}"
+            else:
+                text += "\nNo hay variables libres."
             if typ == 'unique':
                 sol = res['solution']
                 sol_str = ', '.join([f"x{i+1} = {sol[i]}" for i in range(len(sol))])

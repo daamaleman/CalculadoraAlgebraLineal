@@ -64,7 +64,7 @@ class LinearSystemSolver:
             if all(x == 0 for x in row[:n_vars]) and row[n_vars] != 0:
                 inconsistent = True; break
         if inconsistent:
-            return {"type": "inconsistent", "steps": steps, "rref": rref_mat}
+            return {"type": "inconsistent", "steps": steps, "rref": rref_mat, "pivot_cols": [], "free_vars": list(range(n_vars))}
         # count pivots
         pivots = 0
         pivot_cols = []
@@ -72,10 +72,11 @@ class LinearSystemSolver:
             col = [rows[i][j] for i in range(m)]
             if any(col) and any(rows[i][j] == 1 and all(rows[i][k] == 0 for k in range(n_vars) if k != j) for i in range(m)):
                 pivots += 1; pivot_cols.append(j)
+        free_vars = [j for j in range(n_vars) if j not in pivot_cols]
         if pivots == n_vars:
             # unique solution: read last column (assuming augmented [A | b])
             sol = [rows[i][-1] for i in range(n_vars)]
-            return {"type": "unique", "solution": sol, "steps": steps, "rref": rref_mat}
+            return {"type": "unique", "solution": sol, "steps": steps, "rref": rref_mat, "pivot_cols": pivot_cols, "free_vars": free_vars}
         else:
-            # infinite solutions (basic notification). Parametrization can be added.
-            return {"type": "infinite", "steps": steps, "rref": rref_mat}
+            # infinite solutions (basic notification). Parametrization puede ser agregada.
+            return {"type": "infinite", "steps": steps, "rref": rref_mat, "pivot_cols": pivot_cols, "free_vars": free_vars}
