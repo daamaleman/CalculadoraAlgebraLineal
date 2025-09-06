@@ -133,14 +133,18 @@ class AugmentedSystemWidget(QWidget):
                 text += f"\nVariables libres: {free_str}"
             else:
                 text += "\nNo hay variables libres."
+            # Consistencia
             if typ == 'unique':
+                text += "\n\nEl sistema es consistente (solución única)."
                 sol = res['solution']
                 sol_str = ', '.join([f"x{i+1} = {sol[i]}" for i in range(len(sol))])
-                text += f"\n\nSolución única: {sol_str}"
+                text += f"\nSolución única: {sol_str}"
             elif typ == 'infinite':
-                text += "\n\nSistema con infinitas soluciones (libertad en variables)."
+                text += "\n\nEl sistema es consistente (infinitas soluciones)."
+                text += "\nSistema con infinitas soluciones (libertad en variables)."
             elif typ == 'inconsistent':
-                text += "\n\nSistema inconsistente (sin solución)."
+                text += "\n\nEl sistema es inconsistente (sin solución)."
+                text += "\nSistema inconsistente (sin solución)."
             self.output.setPlainText(text)
         except Exception as ex:
             QMessageBox.critical(self, 'Error', str(ex))
