@@ -1,10 +1,319 @@
+
+# ...existing code...
+
+from PySide6.QtWidgets import QWidget, QGridLayout, QLineEdit, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QMessageBox, QTextEdit, QSpinBox
+
+class VectorArithmeticWidget(QWidget):
+    """Suma, resta y multiplicación de vectores"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        v = QVBoxLayout(self)
+        size_line = QHBoxLayout()
+        size_line.addWidget(QLabel('Dimensión n:'))
+        self.n_spin = QSpinBox(); self.n_spin.setRange(2, 8); self.n_spin.setValue(3)
+        size_line.addWidget(self.n_spin)
+        v.addLayout(size_line)
+        self.v1 = VectorInput(3, 'v₁')
+        self.v2 = VectorInput(3, 'v₂')
+        v.addWidget(self.v1)
+        v.addWidget(self.v2)
+        # Escalar para multiplicación
+        esc_line = QHBoxLayout()
+        esc_line.addWidget(QLabel('Escalar:'))
+        self.esc_edit = QLineEdit(); self.esc_edit.setValidator(number_validator()); self.esc_edit.setFixedWidth(60)
+        esc_line.addWidget(self.esc_edit)
+        v.addLayout(esc_line)
+        # Botones
+        btn_sum = QPushButton('Sumar v₁ + v₂')
+        btn_res = QPushButton('Restar v₁ - v₂')
+        btn_mul = QPushButton('Multiplicar escalar · v₁')
+        hbtn = QHBoxLayout(); hbtn.addWidget(btn_sum); hbtn.addWidget(btn_res); hbtn.addWidget(btn_mul)
+        v.addLayout(hbtn)
+        self.output = QTextEdit(); self.output.setReadOnly(True)
+        self.output.setFont(QFont('Consolas', 12))
+        v.addWidget(self.output)
+        self.n_spin.valueChanged.connect(self._on_resize)
+        btn_sum.clicked.connect(self._on_sum)
+        btn_res.clicked.connect(self._on_res)
+        btn_mul.clicked.connect(self._on_mul)
+
+    def _on_resize(self):
+        n = self.n_spin.value()
+        self.v1.set_size(n)
+        self.v2.set_size(n)
+
+    def _on_sum(self):
+        try:
+            v1 = self.v1.get_vector()
+            v2 = self.v2.get_vector()
+            res = v1 + v2
+            self.output.setPlainText(f"v₁ + v₂ = {res}")
+        except Exception as ex:
+            QMessageBox.critical(self, 'Error', str(ex))
+
+    def _on_res(self):
+        try:
+            v1 = self.v1.get_vector()
+            v2 = self.v2.get_vector()
+            res = v1 + (-v2)
+            self.output.setPlainText(f"v₁ - v₂ = {res}")
+        except Exception as ex:
+            QMessageBox.critical(self, 'Error', str(ex))
+
+    def _on_mul(self):
+        try:
+            v1 = self.v1.get_vector()
+            esc = self.esc_edit.text().strip()
+            if esc == '': esc = '1'
+            try:
+                esc = float(esc.replace(',', '.'))
+            except Exception:
+                raise ValueError('Escalar inválido')
+            res = esc * v1
+            self.output.setPlainText(f"{esc} · v₁ = {res}")
+        except Exception as ex:
+            QMessageBox.critical(self, 'Error', str(ex))
 from PySide6.QtWidgets import QWidget, QGridLayout, QLineEdit, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QMessageBox, QTextEdit, QSpinBox
 from PySide6.QtGui import QFont
 from PySide6.QtCore import Qt
+
 from core.matrix import Matrix, parse_number
 from core.formatter import block_from_matrix, with_op, pretty_matrix
 from core.linsys import LinearSystemSolver
+from core.vector import Vector
+from core.linsys_vector import es_combinacion_lineal, resolver_ecuacion_vectorial
+from core.matrix_eq import gauss_eliminacion
 from .validators import number_validator
+class VectorInput(QWidget):
+    """Widget para ingresar un vector de tamaño n"""
+    def __init__(self, n=3, label='Vector', parent=None):
+        super().__init__(parent)
+        self.n = n
+        layout = QHBoxLayout(self)
+        layout.addWidget(QLabel(label+':'))
+        self.edits = []
+        for i in range(n):
+            e = QLineEdit(); e.setValidator(number_validator()); e.setFixedWidth(60)
+            e.setPlaceholderText(f"0")
+            layout.addWidget(e)
+            self.edits.append(e)
+
+    def get_vector(self):
+        vals = []
+        for i, e in enumerate(self.edits):
+            t = e.text().strip()
+            if t == '': t = '0'
+            try:
+                vals.append(float(t.replace(',', '.')))
+            except Exception:
+                raise ValueError(f"Entrada inválida en posición {i+1}: {t}")
+        return Vector(vals)
+
+    def set_size(self, n):
+        # Redimensionar el widget
+        for e in self.edits:
+            e.setParent(None)
+        self.edits = []
+        self.n = n
+        for i in range(n):
+            e = QLineEdit(); e.setValidator(number_validator()); e.setFixedWidth(60)
+            e.setPlaceholderText(f"0")
+            self.layout().addWidget(e)
+            self.edits.append(e)
+
+class VectorPropertiesWidget(QWidget):
+    """Propiedades algebraicas de R^n"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        v = QVBoxLayout(self)
+        size_line = QHBoxLayout()
+        size_line.addWidget(QLabel('Dimensión n:'))
+        self.n_spin = QSpinBox(); self.n_spin.setRange(2, 8); self.n_spin.setValue(3)
+        size_line.addWidget(self.n_spin)
+        v.addLayout(size_line)
+        # Vectores
+        self.v1 = VectorInput(3, 'v₁')
+        self.v2 = VectorInput(3, 'v₂')
+        self.v3 = VectorInput(3, 'v₃')
+        v.addWidget(self.v1)
+        v.addWidget(self.v2)
+        v.addWidget(self.v3)
+        # Escalar
+        esc_line = QHBoxLayout()
+        esc_line.addWidget(QLabel('Escalar:'))
+        self.esc_edit = QLineEdit(); self.esc_edit.setValidator(number_validator()); self.esc_edit.setFixedWidth(60)
+        esc_line.addWidget(self.esc_edit)
+        v.addLayout(esc_line)
+        # Botón y salida
+        btn = QPushButton('Verificar propiedades')
+        v.addWidget(btn)
+        self.output = QTextEdit(); self.output.setReadOnly(True)
+        self.output.setFont(QFont('Consolas', 12))
+        v.addWidget(self.output)
+        btn.clicked.connect(self._on_check)
+        self.n_spin.valueChanged.connect(self._on_resize)
+
+    def _on_resize(self):
+        n = self.n_spin.value()
+        self.v1.set_size(n)
+        self.v2.set_size(n)
+        self.v3.set_size(n)
+
+    def _on_check(self):
+        try:
+            n = self.n_spin.value()
+            v1 = self.v1.get_vector()
+            v2 = self.v2.get_vector()
+            v3 = self.v3.get_vector()
+            esc = self.esc_edit.text().strip()
+            if esc == '': esc = '1'
+            try:
+                esc = float(esc.replace(',', '.'))
+            except Exception:
+                raise ValueError('Escalar inválido')
+            # Suma y escalar
+            suma = v1 + v2
+            mult = esc * v1
+            # Propiedades
+            comm = Vector.check_commutative(v1, v2)
+            assoc = Vector.check_associative(v1, v2, v3)
+            cero = Vector.check_zero(v1)
+            opuesto = Vector.check_opposite(v1)
+            out = f"v₁ + v₂ = {suma}\n"
+            out += f"{esc}·v₁ = {mult}\n\n"
+            out += f"Conmutativa: {'✔️' if comm else '❌'}\n"
+            out += f"Asociativa: {'✔️' if assoc else '❌'}\n"
+            out += f"Vector cero: {'✔️' if cero else '❌'}\n"
+            out += f"Vector opuesto: {'✔️' if opuesto else '❌'}\n"
+            self.output.setPlainText(out)
+        except Exception as ex:
+            QMessageBox.critical(self, 'Error', str(ex))
+
+class LinearCombinationWidget(QWidget):
+    """Combinación lineal y ecuación vectorial"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        v = QVBoxLayout(self)
+        size_line = QHBoxLayout()
+        size_line.addWidget(QLabel('Dimensión n:'))
+        self.n_spin = QSpinBox(); self.n_spin.setRange(2, 8); self.n_spin.setValue(3)
+        size_line.addWidget(self.n_spin)
+        size_line.addWidget(QLabel('Cantidad de vectores:'))
+        self.k_spin = QSpinBox(); self.k_spin.setRange(2, 5); self.k_spin.setValue(3)
+        size_line.addWidget(self.k_spin)
+        v.addLayout(size_line)
+        # Vectores
+        self.vec_inputs = [VectorInput(3, f'v{i+1}') for i in range(3)]
+        for w in self.vec_inputs:
+            v.addWidget(w)
+        self.target = VectorInput(3, 'Objetivo')
+        v.addWidget(self.target)
+        # Botones
+        btn1 = QPushButton('¿Es combinación lineal?')
+        btn2 = QPushButton('Resolver ecuación vectorial')
+        hbtn = QHBoxLayout(); hbtn.addWidget(btn1); hbtn.addWidget(btn2)
+        v.addLayout(hbtn)
+        self.output = QTextEdit(); self.output.setReadOnly(True)
+        self.output.setFont(QFont('Consolas', 12))
+        v.addWidget(self.output)
+        self.n_spin.valueChanged.connect(self._on_resize)
+        self.k_spin.valueChanged.connect(self._on_resize)
+        btn1.clicked.connect(self._on_check_comb)
+        btn2.clicked.connect(self._on_solve_eq)
+
+    def _on_resize(self):
+        n = self.n_spin.value(); k = self.k_spin.value()
+        # Redimensionar inputs
+        for w in self.vec_inputs:
+            w.setParent(None)
+        self.vec_inputs = [VectorInput(n, f'v{i+1}') for i in range(k)]
+        for i, w in enumerate(self.vec_inputs):
+            self.layout().insertWidget(1+i, w)
+        self.target.set_size(n)
+
+    def _on_check_comb(self):
+        try:
+            vectores = [w.get_vector() for w in self.vec_inputs]
+            objetivo = self.target.get_vector()
+            es_comb, pasos = es_combinacion_lineal(vectores, objetivo)
+            out = '¿Es combinación lineal?: ' + ('✔️ SÍ' if es_comb else '❌ NO') + '\n\n'
+            out += '\n'.join(str(p) for p in pasos)
+            self.output.setPlainText(out)
+        except Exception as ex:
+            QMessageBox.critical(self, 'Error', str(ex))
+
+    def _on_solve_eq(self):
+        try:
+            vectores = [w.get_vector() for w in self.vec_inputs]
+            objetivo = self.target.get_vector()
+            _, pasos = resolver_ecuacion_vectorial(vectores, objetivo)
+            out = 'Ecuación vectorial:\n\n' + '\n'.join(str(p) for p in pasos)
+            self.output.setPlainText(out)
+        except Exception as ex:
+            QMessageBox.critical(self, 'Error', str(ex))
+
+class MatrixEquationWidget(QWidget):
+    """Ecuación matricial AX = B"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        v = QVBoxLayout(self)
+        size_line = QHBoxLayout()
+        size_line.addWidget(QLabel('Filas de A:'))
+        self.m_spin = QSpinBox(); self.m_spin.setRange(2, 6); self.m_spin.setValue(3)
+        size_line.addWidget(self.m_spin)
+        size_line.addWidget(QLabel('Columnas de A:'))
+        self.n_spin = QSpinBox(); self.n_spin.setRange(2, 6); self.n_spin.setValue(3)
+        size_line.addWidget(self.n_spin)
+        size_line.addWidget(QLabel('Columnas de B:'))
+        self.k_spin = QSpinBox(); self.k_spin.setRange(1, 4); self.k_spin.setValue(1)
+        size_line.addWidget(self.k_spin)
+        v.addLayout(size_line)
+        self.A = MatrixInput(3, 3)
+        self.B = MatrixInput(3, 1)
+        mats = QHBoxLayout()
+        mats.addWidget(QLabel('Matriz A'))
+        mats.addWidget(self.A)
+        mats.addSpacing(10)
+        mats.addWidget(QLabel('Matriz/vector B'))
+        mats.addWidget(self.B)
+        v.addLayout(mats)
+        btn = QPushButton('Resolver AX = B')
+        v.addWidget(btn)
+        self.output = QTextEdit(); self.output.setReadOnly(True)
+        self.output.setFont(QFont('Consolas', 12))
+        v.addWidget(self.output)
+        self.m_spin.valueChanged.connect(self._on_resize)
+        self.n_spin.valueChanged.connect(self._on_resize)
+        self.k_spin.valueChanged.connect(self._on_resize)
+        btn.clicked.connect(self._on_solve)
+
+    def _on_resize(self):
+        m = self.m_spin.value(); n = self.n_spin.value(); k = self.k_spin.value()
+        self.A.setParent(None); self.B.setParent(None)
+        self.A = MatrixInput(m, n)
+        self.B = MatrixInput(m, k)
+        mats = self.layout().itemAt(1).layout()
+        while mats.count():
+            w = mats.takeAt(0).widget()
+            if w:
+                w.setParent(None)
+        mats.addWidget(QLabel('Matriz A'))
+        mats.addWidget(self.A)
+        mats.addSpacing(10)
+        mats.addWidget(QLabel('Matriz/vector B'))
+        mats.addWidget(self.B)
+
+    def _on_solve(self):
+        try:
+            A = [[float(x) for x in row] for row in self.A.to_matrix().rows()]
+            B = [[float(x) for x in row] for row in self.B.to_matrix().rows()]
+            X, pasos = gauss_eliminacion(A, B)
+            out = '\n'.join(str(p) for p in pasos)
+            if X is not None:
+                out += f"\n\nSolución X = {X}"
+            self.output.setPlainText(out)
+        except Exception as ex:
+            QMessageBox.critical(self, 'Error', str(ex))
 
 class MatrixInput(QWidget):
     """Grid editor for a matrix with live validation."""
