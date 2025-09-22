@@ -233,11 +233,33 @@ class LinearCombinationWidget(QWidget):
 
     def _on_check_comb(self):
         try:
+            from core.formatter import pretty_matrix
+            from core.matrix import Matrix
             vectores = [w.get_vector() for w in self.vec_inputs]
             objetivo = self.target.get_vector()
             es_comb, pasos = es_combinacion_lineal(vectores, objetivo)
-            out = '¿Es combinación lineal?: ' + ('✔️ SÍ' if es_comb else '❌ NO') + '\n\n'
+            # Mostrar vectores como columnas
+            mat_v = Matrix([v.values for v in vectores]).transpose()
+            mat_obj = Matrix([objetivo.values]).transpose()
+            vectores_str = '\n'.join(pretty_matrix(mat_v))
+            objetivo_str = '\n'.join(pretty_matrix(mat_obj))
+            out = 'Vectores dados (columnas):\n' + vectores_str + '\n\nVector objetivo:\n' + objetivo_str + '\n\n'
+            # Determinar tipo de solución
+            tipo = None
+            if pasos and any('Sistema incompatible' in str(p) or 'incompatible' in str(p).lower() for p in pasos):
+                tipo = 'incompatible'
+            elif pasos and any('Infinitas soluciones' in str(p) for p in pasos):
+                tipo = 'infinitas'
+            else:
+                tipo = 'unica' if es_comb else 'incompatible'
+            if tipo == 'incompatible':
+                out += '¿Es combinación lineal?: ❌ NO\n\n'
+            else:
+                out += '¿Es combinación lineal?: ✔️ SÍ\n\n'
             out += '\n'.join(str(p) for p in pasos)
+            if tipo == 'infinitas':
+                out += '\n\nEjemplo de combinación lineal: puedes expresar el vector objetivo como una combinación infinita de los vectores dados, variando los coeficientes libres.\n'
+                out += 'Por ejemplo: c1*v1 + c2*v2 + ... + cn*vn = objetivo, donde algunos ci pueden tomar cualquier valor real.\n'
             self.output.setPlainText(out)
         except Exception as ex:
             QMessageBox.critical(self, 'Error', str(ex))
