@@ -493,6 +493,24 @@ class LinearDependenceWidget(QWidget):
         from core.formatter import pretty_matrix
         from core.matrix import Matrix
         out = []
+        # Planteo de la ecuación vectorial: c1 v1 + ... + ck vk = 0
+        try:
+            # Reconstruimos los vectores desde la UI para mostrarlos como columnas
+            # Nota: usamos los valores tal cual para la visualización
+            vectors_vals = [w.get_vector().values for w in self.vec_inputs]
+            if vectors_vals:
+                mat_cols = Matrix(vectors_vals).transpose()  # n x k (columnas = vi)
+                zero_vec = Matrix([[0] for _ in range(self.n_spin.value())])
+                k = len(vectors_vals)
+                eq_str = ' + '.join([f"c{i+1}·v{i+1}" for i in range(k)]) + ' = 0'
+                out.append('Ecuación vectorial (planteo):')
+                out.append(eq_str)
+                out.append('\nVectores (columnas):')
+                out.append('\n'.join(pretty_matrix(mat_cols)))
+                out.append('\nVector 0:')
+                out.append('\n'.join(pretty_matrix(zero_vec)))
+        except Exception:
+            pass
         out.append('\n'.join(res['steps']))
         if res.get('rref'):
             out.append('\nRREF de la matriz aumentada:')
