@@ -83,6 +83,7 @@ from core.linsys import LinearSystemSolver
 from core.vector import Vector
 from core.linsys_vector import es_combinacion_lineal, resolver_ecuacion_vectorial
 from core.matrix_eq import gauss_eliminacion
+from core.solve_systems import solve_linear_system, solve_homogeneous, analyze_linear_dependence
 from .validators import number_validator
 class VectorInput(QWidget):
     """Widget para ingresar un vector de tamaño n"""
@@ -99,12 +100,13 @@ class VectorInput(QWidget):
             self.edits.append(e)
 
     def get_vector(self):
+        from core.matrix import parse_number
         vals = []
         for i, e in enumerate(self.edits):
             t = e.text().strip()
             if t == '': t = '0'
             try:
-                vals.append(float(t.replace(',', '.')))
+                vals.append(parse_number(t))
             except Exception:
                 raise ValueError(f"Entrada inválida en posición {i+1}: {t}")
         return Vector(vals)
@@ -327,15 +329,187 @@ class MatrixEquationWidget(QWidget):
 
     def _on_solve(self):
         try:
-            A = [[float(x) for x in row] for row in self.A.to_matrix().rows()]
-            B = [[float(x) for x in row] for row in self.B.to_matrix().rows()]
+            from core.formatter import pretty_matrix
+            from core.matrix import Matrix
+            A = self.A.to_matrix().rows()
+            B = self.B.to_matrix().rows()
             X, pasos = gauss_eliminacion(A, B)
             out = '\n'.join(str(p) for p in pasos)
             if X is not None:
-                out += f"\n\nSolución X = {X}"
+                # Ordenar la matriz X por filas y columnas (ya está ordenada por construcción)
+                # Mostrar la solución X como matriz bonita y en fracciones
+                mat_X = Matrix([[x for x in row] for row in X])
+                out += f"\n\nSolución X (en fracciones):\n" + '\n'.join(pretty_matrix(mat_X))
             self.output.setPlainText(out)
         except Exception as ex:
             QMessageBox.critical(self, 'Error', str(ex))
+
+class SystemsSolverWidget(QWidget):
+    """Resolver AX=B y AX=0 con pasos y conclusión"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        v = QVBoxLayout(self)
+        size = QHBoxLayout()
+        size.addWidget(QLabel('Filas (m):'))
+        self.m_spin = QSpinBox(); self.m_spin.setRange(1, 6); self.m_spin.setValue(3)
+        size.addWidget(self.m_spin)
+        size.addWidget(QLabel('Columnas (n):'))
+        self.n_spin = QSpinBox(); self.n_spin.setRange(1, 6); self.n_spin.setValue(3)
+        size.addWidget(self.n_spin)
+        v.addLayout(size)
+        self.A = MatrixInput(3, 3)
+        self.B = MatrixInput(3, 1)
+        mats = QHBoxLayout(); mats.addWidget(QLabel('Matriz A')); mats.addWidget(self.A); mats.addSpacing(10); mats.addWidget(QLabel('Vector/matriz B')); mats.addWidget(self.B)
+        v.addLayout(mats)
+        btns = QHBoxLayout()
+        btn_h = QPushButton('Resolver AX = 0 (Homogéneo)')
+        btn_nh = QPushButton('Resolver AX = B (No homogéneo)')
+        btns.addWidget(btn_h); btns.addWidget(btn_nh)
+        v.addLayout(btns)
+        self.output = QTextEdit(); self.output.setReadOnly(True); self.output.setFont(QFont('Consolas', 11))
+        v.addWidget(self.output)
+        actions = QHBoxLayout()
+        btn_copy = QPushButton('Copiar resultado')
+        btn_clear = QPushButton('Limpiar')
+        actions.addWidget(btn_copy); actions.addWidget(btn_clear); actions.addStretch()
+        v.addLayout(actions)
+        self.m_spin.valueChanged.connect(self._resize)
+        self.n_spin.valueChanged.connect(self._resize)
+        btn_h.clicked.connect(self._solve_h)
+        btn_nh.clicked.connect(self._solve_nh)
+        btn_copy.clicked.connect(self._copy_output)
+        btn_clear.clicked.connect(self._clear_output)
+
+    def _resize(self):
+        m = self.m_spin.value(); n = self.n_spin.value()
+        self.A.setParent(None); self.B.setParent(None)
+        self.A = MatrixInput(m, n)
+        self.B = MatrixInput(m, 1)
+        mats = self.layout().itemAt(1).layout()
+        while mats.count():
+            w = mats.takeAt(0).widget()
+            if w: w.setParent(None)
+        mats.addWidget(QLabel('Matriz A')); mats.addWidget(self.A); mats.addSpacing(10); mats.addWidget(QLabel('Vector/matriz B')); mats.addWidget(self.B)
+
+    def _solve_h(self):
+        try:
+            A = self.A.to_matrix().rows()
+            res = solve_homogeneous(A)
+            self._render_result(res)
+        except Exception as ex:
+            QMessageBox.critical(self, 'Error', str(ex))
+
+    def _solve_nh(self):
+        try:
+            A = self.A.to_matrix().rows()
+            B = [row[0] for row in self.B.to_matrix().rows()]
+            res = solve_linear_system(A, B)
+            self._render_result(res)
+        except Exception as ex:
+            QMessageBox.critical(self, 'Error', str(ex))
+
+    def _render_result(self, res):
+        from core.formatter import pretty_matrix
+        from core.matrix import Matrix
+        out = []
+        out.append('\n'.join(res['steps']))
+        # RREF
+        R = res.get('rref')
+        if R:
+            out.append('\nRREF de la matriz aumentada:')
+            out.append('\n'.join(pretty_matrix(Matrix(R))))
+        # Mensajes
+        out.append('\nEstado: ' + ('Consistente' if res.get('consistent') else 'Inconsistente'))
+        out.append('Conclusión: ' + res.get('message', ''))
+        # Solución
+        if res.get('unique') and res.get('solution') is not None:
+            sol = res['solution']
+            out.append('\nSolución única x:')
+            out.append('\n'.join(pretty_matrix(Matrix([[x] for x in sol]))))
+        elif res.get('infinite'):
+            x_part = res.get('solution') or []
+            basis = res.get('param_basis') or []
+            free = res.get('free_vars') or []
+            out.append('\nSolución general (paramétrica):')
+            out.append('x = x_p + Σ t_j v_j')
+            out.append('x_p =\n' + '\n'.join(pretty_matrix(Matrix([[x] for x in x_part]))))
+            for j, v in enumerate(basis):
+                out.append(f"v{j+1} =\n" + '\n'.join(pretty_matrix(Matrix([[x] for x in v]))))
+            out.append(f"Variables libres: {free}")
+        self.output.setPlainText('\n'.join(out))
+
+    def _copy_output(self):
+        from PySide6.QtWidgets import QApplication
+        QApplication.clipboard().setText(self.output.toPlainText())
+
+    def _clear_output(self):
+        self.output.clear()
+
+class LinearDependenceWidget(QWidget):
+    """Analizar dependencia/independencia lineal"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        v = QVBoxLayout(self)
+        size = QHBoxLayout()
+        size.addWidget(QLabel('Dimensión n:'))
+        self.n_spin = QSpinBox(); self.n_spin.setRange(1, 8); self.n_spin.setValue(3)
+        size.addWidget(self.n_spin)
+        size.addWidget(QLabel('Cantidad de vectores k:'))
+        self.k_spin = QSpinBox(); self.k_spin.setRange(1, 6); self.k_spin.setValue(3)
+        size.addWidget(self.k_spin)
+        v.addLayout(size)
+        self.vec_inputs = [VectorInput(3, 'v1'), VectorInput(3, 'v2'), VectorInput(3, 'v3')]
+        for w in self.vec_inputs: v.addWidget(w)
+        btn = QPushButton('Analizar dependencia')
+        v.addWidget(btn)
+        self.output = QTextEdit(); self.output.setReadOnly(True); self.output.setFont(QFont('Consolas', 11))
+        v.addWidget(self.output)
+        actions = QHBoxLayout()
+        btn_copy = QPushButton('Copiar resultado')
+        btn_clear = QPushButton('Limpiar')
+        actions.addWidget(btn_copy); actions.addWidget(btn_clear); actions.addStretch()
+        v.addLayout(actions)
+        self.n_spin.valueChanged.connect(self._resize)
+        self.k_spin.valueChanged.connect(self._resize)
+        btn.clicked.connect(self._analyze)
+        btn_copy.clicked.connect(self._copy_output)
+        btn_clear.clicked.connect(self._clear_output)
+
+    def _resize(self):
+        n = self.n_spin.value(); k = self.k_spin.value()
+        for w in self.vec_inputs: w.setParent(None)
+        self.vec_inputs = [VectorInput(n, f'v{i+1}') for i in range(k)]
+        for i, w in enumerate(self.vec_inputs): self.layout().insertWidget(1+i, w)
+
+    def _analyze(self):
+        try:
+            vectors = [w.get_vector().values for w in self.vec_inputs]
+            res = analyze_linear_dependence(vectors)
+            self._render(res)
+        except Exception as ex:
+            QMessageBox.critical(self, 'Error', str(ex))
+
+    def _render(self, res):
+        from core.formatter import pretty_matrix
+        from core.matrix import Matrix
+        out = []
+        out.append('\n'.join(res['steps']))
+        if res.get('rref'):
+            out.append('\nRREF de la matriz aumentada:')
+            out.append('\n'.join(pretty_matrix(Matrix(res['rref']))))
+        out.append('\nConclusión: ' + res.get('message',''))
+        if res.get('infinite'):
+            out.append('\nBase del espacio de soluciones no triviales:')
+            for j, v in enumerate(res.get('param_basis') or []):
+                out.append(f"v{j+1} =\n" + '\n'.join(pretty_matrix(Matrix([[x] for x in v]))))
+        self.output.setPlainText('\n'.join(out))
+
+    def _copy_output(self):
+        from PySide6.QtWidgets import QApplication
+        QApplication.clipboard().setText(self.output.toPlainText())
+
+    def _clear_output(self):
+        self.output.clear()
 
 class MatrixInput(QWidget):
     """Grid editor for a matrix with live validation."""

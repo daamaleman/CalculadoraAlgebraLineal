@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QWidget, QLabel, QTabWidget, QVBoxLayout, QTextEdit
-from .matrix_widgets import AugmentedSystemWidget, VectorPropertiesWidget, LinearCombinationWidget, MatrixEquationWidget, VectorArithmeticWidget
+from .matrix_widgets import AugmentedSystemWidget, VectorPropertiesWidget, LinearCombinationWidget, MatrixEquationWidget, VectorArithmeticWidget, SystemsSolverWidget, LinearDependenceWidget
 
 class HomeView(QWidget):
     def __init__(self, parent=None):
@@ -36,5 +36,7 @@ class HomeView(QWidget):
         tabs.addTab(VectorPropertiesWidget(), 'Propiedades de ℝⁿ')
         tabs.addTab(LinearCombinationWidget(), 'Combinación Lineal / Ecuación Vectorial')
         tabs.addTab(MatrixEquationWidget(), 'Ecuación Matricial (AX=B)')
+        tabs.addTab(SystemsSolverWidget(), 'Sistemas AX=0 / AX=B (paso a paso)')
+        tabs.addTab(LinearDependenceWidget(), 'Dependencia Lineal (R^n)')
         tabs.addTab(AugmentedSystemWidget(), 'Sistemas de ecuaciones (Gauss–Jordan)')
         v.addWidget(tabs)

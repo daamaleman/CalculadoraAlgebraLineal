@@ -8,14 +8,24 @@ def parse_number(token: str) -> Number:
     """Parse user input like '3', '-1.5', '2/3' into exact Fraction."""
     token = token.strip().replace(',', '.')  # allow comma decimals
     if '/' in token:
-        num, den = token.split('/', 1)
-        return Fraction(int(num), int(den))
+        parts = token.split('/')
+        if len(parts) != 2:
+            raise ValueError(f"Fracción inválida: '{token}'. Usa el formato a/b, con a y b números.")
+        num, den = parts
+        try:
+            num_f = Fraction(num)
+            den_f = Fraction(den)
+            if den_f == 0:
+                raise ValueError('El denominador no puede ser cero')
+            return num_f / den_f
+        except Exception:
+            raise ValueError(f"Fracción inválida: '{token}'. Usa el formato a/b, con a y b números.")
     if token == '' or token == '+':
-        raise ValueError('Empty number')
-    if any(c in token for c in '.eE'):
-        # decimal to Fraction exactly from string
+        raise ValueError('Número vacío')
+    try:
         return Fraction(token)
-    return Fraction(int(token), 1)
+    except Exception:
+        raise ValueError(f"Número inválido: '{token}'")
 
 class Matrix:
     """Simple immutable Matrix wrapper using Fraction arithmetic."""

@@ -17,7 +17,12 @@ def main():
     apply_dark_theme(app)
     w = MainWindow()
     w.show()
-    sys.exit(app.exec())
+    try:
+        exit_code = app.exec()
+    except KeyboardInterrupt:
+        # Cierre limpio al presionar Ctrl+C en la terminal
+        exit_code = 0
+    sys.exit(exit_code)
 
 if __name__ == '__main__':
     main()

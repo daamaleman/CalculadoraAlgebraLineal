@@ -6,12 +6,15 @@ def gauss_eliminacion(A, B):
     # Devuelve X y pasos
     pasos = []
     n = len(A)
-    m = len(B[0]) if isinstance(B[0], list) else 1
-    # Convertir B a matriz n x m
-    if m == 1:
-        B = [[b] for b in B]
+    # Asegurar que B es matriz n x m
+    if isinstance(B[0], list):
+        m = len(B[0])
+        Bmat = B
+    else:
+        m = 1
+        Bmat = [[b] for b in B]
     # Matriz aumentada
-    M = [A[i][:] + B[i][:] for i in range(n)]
+    M = [list(A[i]) + list(Bmat[i]) for i in range(n)]
     pasos.append(f"Matriz aumentada inicial: {M}")
     # Eliminación hacia adelante
     for i in range(n):
