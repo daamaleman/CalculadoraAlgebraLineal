@@ -159,7 +159,7 @@ def solve_homogeneous(A: List[List[Fraction]]) -> Dict[str, Any]:
     if res['unique']:
         res['message'] = 'Sistema homogéneo: solo la solución trivial.'
     else:
-        res['message'] = 'Sistema homogéneo: infinitas soluciones no triviales.'
+        res['message'] = 'Sistema no homogéneo: infinitas soluciones no triviales.'
     return res
 
 
