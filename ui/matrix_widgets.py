@@ -78,7 +78,7 @@ from PySide6.QtGui import QFont
 from PySide6.QtCore import Qt
 
 from core.matrix import Matrix, parse_number
-from core.formatter import block_from_matrix, with_op, pretty_matrix
+from core.formatter import block_from_matrix, with_op, pretty_matrix, frac_to_str
 from core.linsys import LinearSystemSolver
 from core.vector import Vector
 from core.linsys_vector import es_combinacion_lineal, resolver_ecuacion_vectorial
@@ -669,5 +669,225 @@ class AugmentedSystemWidget(QWidget):
                 text += "\n\nEl sistema es inconsistente (sin solución)."
                 text += "\nSistema inconsistente (sin solución)."
             self.output.setPlainText(text)
+        except Exception as ex:
+            QMessageBox.critical(self, 'Error', str(ex))
+
+class MatrixOpsWidget(QWidget):
+    """Operaciones con matrices: suma, resta, escalar, producto y traspuesta."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        v = QVBoxLayout(self)
+
+        # Tamaños para A y B
+        size = QHBoxLayout()
+        size.addWidget(QLabel('Filas de A (m):'))
+        self.mA = QSpinBox(); self.mA.setRange(1, 8); self.mA.setValue(2)
+        size.addWidget(self.mA)
+        size.addWidget(QLabel('Columnas de A (n):'))
+        self.nA = QSpinBox(); self.nA.setRange(1, 8); self.nA.setValue(2)
+        size.addWidget(self.nA)
+        size.addSpacing(20)
+        size.addWidget(QLabel('Filas de B (p):'))
+        self.mB = QSpinBox(); self.mB.setRange(1, 8); self.mB.setValue(2)
+        size.addWidget(self.mB)
+        size.addWidget(QLabel('Columnas de B (q):'))
+        self.nB = QSpinBox(); self.nB.setRange(1, 8); self.nB.setValue(2)
+        size.addWidget(self.nB)
+        self.resizeBtn = QPushButton('Redimensionar')
+        size.addWidget(self.resizeBtn)
+        v.addLayout(size)
+
+        # Entradas de matrices
+        self.A = MatrixInput(self.mA.value(), self.nA.value())
+        self.B = MatrixInput(self.mB.value(), self.nB.value())
+        mats = QHBoxLayout()
+        left = QVBoxLayout(); left.addWidget(QLabel('Matriz A')); left.addWidget(self.A)
+        right = QVBoxLayout(); right.addWidget(QLabel('Matriz B')); right.addWidget(self.B)
+        mats.addLayout(left); mats.addSpacing(15); mats.addLayout(right)
+        v.addLayout(mats)
+
+        # Escalar
+        scaleline = QHBoxLayout()
+        scaleline.addWidget(QLabel('Escalar k:'))
+        self.k_edit = QLineEdit(); self.k_edit.setValidator(number_validator()); self.k_edit.setFixedWidth(100); self.k_edit.setPlaceholderText('1/2, -3, 0.25')
+        scaleline.addWidget(self.k_edit)
+        scaleline.addStretch()
+        v.addLayout(scaleline)
+
+        # Botones de operaciones
+        btns1 = QHBoxLayout()
+        self.btn_sum = QPushButton('A + B')
+        self.btn_sub = QPushButton('A - B')
+        self.btn_scal = QPushButton('k · A')
+        self.btn_mul = QPushButton('A · B')
+        self.btn_transpose = QPushButton('Traspuesta de A')
+        btns1.addWidget(self.btn_sum); btns1.addWidget(self.btn_sub); btns1.addWidget(self.btn_scal); btns1.addWidget(self.btn_mul); btns1.addWidget(self.btn_transpose)
+        v.addLayout(btns1)
+
+        # Salida
+        self.output = QTextEdit(); self.output.setReadOnly(True); self.output.setFont(QFont('Consolas', 11))
+        v.addWidget(self.output)
+
+        # Conexiones
+        self.resizeBtn.clicked.connect(self._on_resize)
+        self.btn_sum.clicked.connect(self._do_sum)
+        self.btn_sub.clicked.connect(self._do_sub)
+        self.btn_scal.clicked.connect(self._do_scal)
+        self.btn_mul.clicked.connect(self._do_mul)
+        self.btn_transpose.clicked.connect(self._do_transpose)
+
+    def _on_resize(self):
+        mA, nA, mB, nB = self.mA.value(), self.nA.value(), self.mB.value(), self.nB.value()
+        # rebuild inputs
+        self.A.setParent(None); self.B.setParent(None)
+        self.A = MatrixInput(mA, nA)
+        self.B = MatrixInput(mB, nB)
+        mats = self.layout().itemAt(1).layout()
+        # left VBox is at index 0, right VBox at index 2 (with spacing at 1)
+        # Clear and rebuild to avoid layout confusion
+        while mats.count():
+            it = mats.takeAt(0)
+            w = it.widget()
+            if w: w.setParent(None)
+        left = QVBoxLayout(); left.addWidget(QLabel('Matriz A')); left.addWidget(self.A)
+        right = QVBoxLayout(); right.addWidget(QLabel('Matriz B')); right.addWidget(self.B)
+        mats.addLayout(left); mats.addSpacing(15); mats.addLayout(right)
+
+    def _get_A(self) -> Matrix:
+        return self.A.to_matrix()
+
+    def _get_B(self) -> Matrix:
+        return self.B.to_matrix()
+
+    def _parse_k(self):
+        t = self.k_edit.text().strip()
+        if t == '':
+            t = '1'
+        return parse_number(t)
+
+    def _fmt_head(self, title: str) -> str:
+        return f"=== {title} ===\n"
+
+    def _matrix_block(self, label: str, M: Matrix) -> str:
+        return f"{label}:\n" + '\n'.join(pretty_matrix(M)) + '\n'
+
+    def _do_sum(self):
+        try:
+            A = self._get_A(); B = self._get_B()
+            out = [self._fmt_head('Suma de matrices A + B')]
+            out.append(f"Dimensiones: A es {A.m}×{A.n}, B es {B.m}×{B.n}")
+            if A.m == B.m and A.n == B.n:
+                out.append('✔️ Las matrices son compatibles para la suma (mismos tamaños).\n')
+                C = A.add(B)
+                out.append(self._matrix_block('A', A))
+                out.append('+\n')
+                out.append(self._matrix_block('B', B))
+                out.append('=\n')
+                out.append(self._matrix_block('A + B', C))
+                # Paso a paso elemento a elemento
+                steps = ['C[i,j] = A[i,j] + B[i,j]']
+                for i in range(A.m):
+                    for j in range(A.n):
+                        a = frac_to_str(A.at(i,j)); b = frac_to_str(B.at(i,j)); c = frac_to_str(C.at(i,j))
+                        steps.append(f"c[{i+1},{j+1}] = {a} + {b} = {c}")
+                out.append('\n' + '\n'.join(steps))
+            else:
+                out.append('❌ No se puede sumar: las matrices deben tener igual número de filas y columnas.')
+            self.output.setPlainText('\n'.join(out))
+        except Exception as ex:
+            QMessageBox.critical(self, 'Error', str(ex))
+
+    def _do_sub(self):
+        try:
+            A = self._get_A(); B = self._get_B()
+            out = [self._fmt_head('Resta de matrices A - B')]
+            out.append(f"Dimensiones: A es {A.m}×{A.n}, B es {B.m}×{B.n}")
+            if A.m == B.m and A.n == B.n:
+                out.append('✔️ Las matrices son compatibles para la resta (mismos tamaños).\n')
+                C = A.sub(B)
+                out.append(self._matrix_block('A', A))
+                out.append('-\n')
+                out.append(self._matrix_block('B', B))
+                out.append('=\n')
+                out.append(self._matrix_block('A - B', C))
+                steps = ['C[i,j] = A[i,j] - B[i,j]']
+                for i in range(A.m):
+                    for j in range(A.n):
+                        a = frac_to_str(A.at(i,j)); b = frac_to_str(B.at(i,j)); c = frac_to_str(C.at(i,j))
+                        steps.append(f"c[{i+1},{j+1}] = {a} - {b} = {c}")
+                out.append('\n' + '\n'.join(steps))
+            else:
+                out.append('❌ No se puede restar: las matrices deben tener igual número de filas y columnas.')
+            self.output.setPlainText('\n'.join(out))
+        except Exception as ex:
+            QMessageBox.critical(self, 'Error', str(ex))
+
+    def _do_scal(self):
+        try:
+            A = self._get_A(); k = self._parse_k()
+            out = [self._fmt_head('Multiplicación por escalar k · A')]
+            out.append(f"Escalar ingresado: k = {frac_to_str(k)}")
+            out.append('✔️ Siempre es posible multiplicar una matriz por un escalar.\n')
+            C = A.scalar(k)
+            out.append(self._matrix_block('A', A))
+            out.append('→\n')
+            out.append(self._matrix_block('k · A', C))
+            steps = ['C[i,j] = k · A[i,j]']
+            for i in range(A.m):
+                for j in range(A.n):
+                    a = frac_to_str(A.at(i,j)); c = frac_to_str(C.at(i,j))
+                    steps.append(f"c[{i+1},{j+1}] = {frac_to_str(k)} · {a} = {c}")
+            out.append('\n' + '\n'.join(steps))
+            self.output.setPlainText('\n'.join(out))
+        except Exception as ex:
+            QMessageBox.critical(self, 'Error', str(ex))
+
+    def _do_mul(self):
+        try:
+            A = self._get_A(); B = self._get_B()
+            out = [self._fmt_head('Producto de matrices A · B')]
+            out.append(f"Dimensiones: A es {A.m}×{A.n}, B es {B.m}×{B.n}")
+            if A.n != B.m:
+                out.append('❌ El producto AB no es posible: columnas de A deben coincidir con filas de B (n = p).')
+                self.output.setPlainText('\n'.join(out))
+                return
+            out.append('✔️ El producto AB es posible. El resultado será de tamaño ' + f"{A.m}×{B.n}.\n")
+            C = A.mul(B)
+            out.append(self._matrix_block('A', A))
+            out.append('×\n')
+            out.append(self._matrix_block('B', B))
+            out.append('=\n')
+            out.append(self._matrix_block('A · B', C))
+            # Paso a paso por entradas
+            steps = ['C[i,j] = Σ_{k=1..n} A[i,k] · B[k,j]']
+            for i in range(A.m):
+                for j in range(B.n):
+                    terms = []
+                    for k in range(A.n):
+                        terms.append(f"{frac_to_str(A.at(i,k))}·{frac_to_str(B.at(k,j))}")
+                    s_terms = ' + '.join(terms) if terms else '0'
+                    steps.append(f"c[{i+1},{j+1}] = {s_terms} = {frac_to_str(C.at(i,j))}")
+            out.append('\n' + '\n'.join(steps))
+            self.output.setPlainText('\n'.join(out))
+        except Exception as ex:
+            QMessageBox.critical(self, 'Error', str(ex))
+
+    def _do_transpose(self):
+        try:
+            A = self._get_A()
+            AT = A.transpose()
+            ATT = AT.transpose()
+            out = [self._fmt_head('Traspuesta de A')]
+            out.append(f"Dimensiones: A es {A.m}×{A.n}; Aᵀ será {A.n}×{A.m}.\n")
+            out.append('Intercambiamos filas por columnas: (Aᵀ)[i,j] = A[j,i].\n')
+            out.append(self._matrix_block('A', A))
+            out.append('→\n')
+            out.append(self._matrix_block('Aᵀ', AT))
+            # Verificación de propiedad
+            ok = (ATT.rows() == A.rows())
+            out.append('Propiedad: (Aᵀ)ᵀ = A → ' + ('✔️ Se cumple.' if ok else '❌ No se cumple.'))
+            if not ok:
+                out.append(self._matrix_block('(Aᵀ)ᵀ', ATT))
+            self.output.setPlainText('\n'.join(out))
         except Exception as ex:
             QMessageBox.critical(self, 'Error', str(ex))
