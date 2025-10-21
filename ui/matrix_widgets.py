@@ -724,6 +724,13 @@ class MatrixOpsWidget(QWidget):
         btns1.addWidget(self.btn_sum); btns1.addWidget(self.btn_sub); btns1.addWidget(self.btn_scal); btns1.addWidget(self.btn_mul); btns1.addWidget(self.btn_transpose)
         v.addLayout(btns1)
 
+        # Botón adicional para comparar (A+B)^T con A^T + B^T
+        btns2 = QHBoxLayout()
+        self.btn_transpose_sum_cmp = QPushButton('(A + B)ᵀ  vs  Aᵀ + Bᵀ')
+        btns2.addWidget(self.btn_transpose_sum_cmp)
+        btns2.addStretch()
+        v.addLayout(btns2)
+
         # Salida
         self.output = QTextEdit(); self.output.setReadOnly(True); self.output.setFont(QFont('Consolas', 11))
         v.addWidget(self.output)
@@ -735,6 +742,7 @@ class MatrixOpsWidget(QWidget):
         self.btn_scal.clicked.connect(self._do_scal)
         self.btn_mul.clicked.connect(self._do_mul)
         self.btn_transpose.clicked.connect(self._do_transpose)
+        self.btn_transpose_sum_cmp.clicked.connect(self._do_transpose_sum_compare)
 
     def _on_resize(self):
         mA, nA, mB, nB = self.mA.value(), self.nA.value(), self.mB.value(), self.nB.value()
@@ -892,6 +900,49 @@ class MatrixOpsWidget(QWidget):
         except Exception as ex:
             QMessageBox.critical(self, 'Error', str(ex))
 
+    def _do_transpose_sum_compare(self):
+        try:
+            A = self._get_A(); B = self._get_B()
+            out = [self._fmt_head('Comparación: (A + B)ᵀ  vs  Aᵀ + Bᵀ')]
+            out.append(f"Dimensiones: A es {A.m}×{A.n}, B es {B.m}×{B.n}")
+            if A.m != B.m or A.n != B.n:
+                out.append('❌ No se puede sumar A + B: las matrices deben tener igual número de filas y columnas.')
+                self.output.setPlainText('\n'.join(out))
+                return
+
+            # Calcular A + B y su traspuesta
+            C = A.add(B)
+            Ct = C.transpose()
+
+            # Calcular A^T + B^T
+            At = A.transpose()
+            Bt = B.transpose()
+            sum_trans = At.add(Bt)
+
+            out.append('\nMatriz A:')
+            out.extend(pretty_matrix(A))
+            out.append('\nMatriz B:')
+            out.extend(pretty_matrix(B))
+            out.append('\nA + B:')
+            out.extend(pretty_matrix(C))
+            out.append('\n(A + B)ᵀ:')
+            out.extend(pretty_matrix(Ct))
+            out.append('\nAᵀ:')
+            out.extend(pretty_matrix(At))
+            out.append('\nBᵀ:')
+            out.extend(pretty_matrix(Bt))
+            out.append('\nAᵀ + Bᵀ:')
+            out.extend(pretty_matrix(sum_trans))
+
+            # Comprobación de igualdad elemento a elemento
+            equal = (Ct.rows() == sum_trans.rows())
+            out.append('\nResultado de la verificación: ' + ('✔️ (A + B)ᵀ = Aᵀ + Bᵀ' if equal else '❌ No son iguales'))
+
+            self.output.setPlainText('\n'.join(out))
+        except Exception as ex:
+            QMessageBox.critical(self, 'Error', str(ex))
+            
+    """Inversa de una matriz cuadrada mediante Gauss–Jordan con pasos."""
 class MatrixInverseWidget(QWidget):
     """Calcular la inversa de una matriz cuadrada A mediante Gauss–Jordan [A | I] → [I | A^{-1}] con pasos."""
     def __init__(self, parent=None):
@@ -926,6 +977,11 @@ class MatrixInverseWidget(QWidget):
         self.result = QTextEdit(); self.result.setReadOnly(True); self.result.setFont(QFont('Consolas', 11))
         v.addWidget(QLabel('Resultado y verificaciones:'))
         v.addWidget(self.result)
+
+        # Propiedades/Teoremas de invertibilidad
+        self.props = QTextEdit(); self.props.setReadOnly(True); self.props.setFont(QFont('Consolas', 11))
+        v.addWidget(QLabel('Teoremas y propiedades asociadas a la invertibilidad de A:'))
+        v.addWidget(self.props)
 
         # Conexiones
         self.resizeBtn.clicked.connect(self._on_resize)
@@ -982,6 +1038,8 @@ class MatrixInverseWidget(QWidget):
 
             # Checar identidad
             is_identity = left_final.rows() == Matrix.identity(n).rows()
+            # Siempre evaluar propiedades de invertibilidad (pivot count, etc.)
+            self._update_invertibility_properties(left_final, n)
             if not is_identity:
                 msg = ['Conclusión: ❌ A no es invertible (la izquierda no es Iₙ).']
                 msg.append('\nMatriz final [A_rref | ? ]:')
@@ -1013,3 +1071,39 @@ class MatrixInverseWidget(QWidget):
             self.result.setPlainText('\n'.join(out))
         except Exception as ex:
             QMessageBox.critical(self, 'Error', str(ex))
+
+    def _update_invertibility_properties(self, left_final: Matrix, n: int):
+        rows = left_final.rows()
+        # Contar pivotes (columnas con un 1 y ceros en esa columna, formato RREF)
+        pivot_cols = []
+        for j in range(n):
+            found = False
+            for i in range(len(rows)):
+                if rows[i][j] == 1:
+                    # Verificar que en esa fila las demás entradas (en el bloque izquierda) sean 0 excepto en j
+                    if all(rows[i][k] == 0 for k in range(n) if k != j) and all(rows[r][j] == 0 for r in range(len(rows)) if r != i):
+                        found = True
+                        break
+            if found:
+                pivot_cols.append(j)
+        piv_count = len(pivot_cols)
+        has_n_pivots = (piv_count == n)
+
+        # Ax = 0 solo tiene solución trivial <=> rango(A) = n <=> n pivotes
+        trivial_only = has_n_pivots
+        # Columnas linealmente independientes <=> rango(A) = n
+        cols_independent = has_n_pivots
+
+        lines = []
+        # 1) n pivotes
+        lines.append('1) La matriz A tiene n posiciones pivote: ' + ('✔️ Sí' if has_n_pivots else '❌ No'))
+        lines.append(f"   Pivotes encontrados: {piv_count} de {n}. Columnas pivote (1-indexadas): " + (', '.join(str(j+1) for j in pivot_cols) if pivot_cols else '—'))
+        lines.append('   Interpretación: Si A tiene n pivotes, entonces A es invertible.')
+        # 2) Ax=0 solo trivial
+        lines.append('2) La ecuación A·x = 0 tiene solamente la solución trivial: ' + ('✔️ Sí' if trivial_only else '❌ No'))
+        lines.append('   Interpretación: Si A·x=0 solo tiene la solución trivial, entonces A^{-1} existe.')
+        # 3) Columnas LI
+        lines.append('3) Las columnas de A forman un conjunto linealmente independiente: ' + ('✔️ Sí' if cols_independent else '❌ No'))
+        lines.append('   Interpretación: Si las columnas son linealmente independientes, entonces A es una matriz invertible.')
+
+        self.props.setPlainText('\n'.join(lines))
