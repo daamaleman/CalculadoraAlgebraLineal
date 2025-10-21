@@ -850,6 +850,19 @@ class MatrixOpsWidget(QWidget):
                     a = frac_to_str(A.at(i,j)); c = frac_to_str(C.at(i,j))
                     steps.append(f"c[{i+1},{j+1}] = {frac_to_str(k)} · {a} = {c}")
             out.append('\n' + '\n'.join(steps))
+
+            # Propiedad adicional: r(A) = r(Aᵀ)
+            try:
+                AT = A.transpose()
+                solverA = LinearSystemSolver(A)
+                _, _, rankA, _ = solverA.rref()
+                solverAT = LinearSystemSolver(AT)
+                _, _, rankAT, _ = solverAT.rref()
+                ok_rank = (rankA == rankAT)
+                out.append('\nPropiedad de rango: r(A) = r(Aᵀ) → ' + ('✔️ Se cumple.' if ok_rank else '❌ No se cumple.'))
+                out.append(f"r(A) = {rankA}, r(Aᵀ) = {rankAT}")
+            except Exception:
+                pass
             self.output.setPlainText('\n'.join(out))
         except Exception as ex:
             QMessageBox.critical(self, 'Error', str(ex))
