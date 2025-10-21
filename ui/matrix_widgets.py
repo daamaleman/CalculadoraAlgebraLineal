@@ -1041,7 +1041,17 @@ class MatrixInverseWidget(QWidget):
             # Siempre evaluar propiedades de invertibilidad (pivot count, etc.)
             self._update_invertibility_properties(left_final, n)
             if not is_identity:
-                msg = ['Conclusión: ❌ A no es invertible (la izquierda no es Iₙ).']
+                # Mensaje explícito solicitado: no tiene pivote en cada fila
+                piv = getattr(self, '_last_pivot_info', None)
+                if piv and not piv.get('has_n_pivots', False):
+                    head = 'Conclusión: ❌ La matriz no es invertible porque no tiene pivote en cada fila.'
+                    detalle = f"Pivotes encontrados: {piv.get('piv_count', 0)} de {n}."
+                else:
+                    head = 'Conclusión: ❌ A no es invertible (la izquierda no es Iₙ).'
+                    detalle = None
+                msg = [head]
+                if detalle:
+                    msg.append(detalle)
                 msg.append('\nMatriz final [A_rref | ? ]:')
                 msg.extend(pretty_matrix(left_final))
                 self.result.setPlainText('\n'.join(msg))
@@ -1095,15 +1105,21 @@ class MatrixInverseWidget(QWidget):
         cols_independent = has_n_pivots
 
         lines = []
-        # 1) n pivotes
-        lines.append('1) La matriz A tiene n posiciones pivote: ' + ('✔️ Sí' if has_n_pivots else '❌ No'))
+        # (c) n pivotes
+        lines.append('(c) La matriz A tiene n posiciones pivote: ' + ('✔️ Sí' if has_n_pivots else '❌ No'))
         lines.append(f"   Pivotes encontrados: {piv_count} de {n}. Columnas pivote (1-indexadas): " + (', '.join(str(j+1) for j in pivot_cols) if pivot_cols else '—'))
         lines.append('   Interpretación: Si A tiene n pivotes, entonces A es invertible.')
-        # 2) Ax=0 solo trivial
-        lines.append('2) La ecuación A·x = 0 tiene solamente la solución trivial: ' + ('✔️ Sí' if trivial_only else '❌ No'))
+        # (d) Ax=0 solo trivial
+        lines.append('(d) La ecuación A·x = 0 tiene solamente la solución trivial: ' + ('✔️ Sí' if trivial_only else '❌ No'))
         lines.append('   Interpretación: Si A·x=0 solo tiene la solución trivial, entonces A^{-1} existe.')
-        # 3) Columnas LI
-        lines.append('3) Las columnas de A forman un conjunto linealmente independiente: ' + ('✔️ Sí' if cols_independent else '❌ No'))
+        # (e) Columnas LI
+        lines.append('(e) Las columnas de A forman un conjunto linealmente independiente: ' + ('✔️ Sí' if cols_independent else '❌ No'))
         lines.append('   Interpretación: Si las columnas son linealmente independientes, entonces A es una matriz invertible.')
 
         self.props.setPlainText('\n'.join(lines))
+        # Guardar para mensajes posteriores
+        self._last_pivot_info = {
+            'pivot_cols': pivot_cols,
+            'piv_count': piv_count,
+            'has_n_pivots': has_n_pivots,
+        }
