@@ -52,6 +52,7 @@ app/
         <li>Suma, resta y multiplicación.</li>
         <li>Producto por un escalar.</li>
         <li>Transpuesta e identidad.</li>
+        <li>Inversa de una matriz n×n con pasos de Gauss–Jordan y verificación A·A^{-1}=I.</li>
         <li>Representación visual con notación matemática.</li>
     </ul>
 </details>
@@ -96,8 +97,15 @@ pip install PySide6
 ### Ejecución
 
 ```bash
-python -m app.main
+python .\main.py
 ```
+
+### Nueva pestaña: Inversa Matriz
+
+- Abre la pestaña "Inversa Matriz".
+- Ingresa la matriz cuadrada A (puedes usar fracciones como 2/3 o decimales 1.5).
+- Presiona "Calcular A^{-1} (Gauss–Jordan)" para ver los pasos sobre la matriz aumentada [A | I].
+- Si A es invertible, se mostrará A^{-1} y se verificarán las propiedades A·A^{-1}=I y A^{-1}·A=I.
 
 ---
 

@@ -78,7 +78,7 @@ from PySide6.QtGui import QFont
 from PySide6.QtCore import Qt
 
 from core.matrix import Matrix, parse_number
-from core.formatter import block_from_matrix, with_op, pretty_matrix, frac_to_str
+from core.formatter import block_from_matrix, with_op, pretty_matrix, frac_to_str, join_augmented
 from core.linsys import LinearSystemSolver
 from core.vector import Vector
 from core.linsys_vector import es_combinacion_lineal, resolver_ecuacion_vectorial
@@ -889,5 +889,127 @@ class MatrixOpsWidget(QWidget):
             if not ok:
                 out.append(self._matrix_block('(Aᵀ)ᵀ', ATT))
             self.output.setPlainText('\n'.join(out))
+        except Exception as ex:
+            QMessageBox.critical(self, 'Error', str(ex))
+
+class MatrixInverseWidget(QWidget):
+    """Calcular la inversa de una matriz cuadrada A mediante Gauss–Jordan [A | I] → [I | A^{-1}] con pasos."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        v = QVBoxLayout(self)
+        # Tamaño
+        size = QHBoxLayout()
+        size.addWidget(QLabel('Tamaño n (matriz A es n×n):'))
+        self.n_spin = QSpinBox(); self.n_spin.setRange(1, 8); self.n_spin.setValue(3)
+        size.addWidget(self.n_spin)
+        self.resizeBtn = QPushButton('Redimensionar')
+        size.addWidget(self.resizeBtn)
+        v.addLayout(size)
+
+        # Entrada de A
+        self.A = MatrixInput(self.n_spin.value(), self.n_spin.value())
+        mat_box = QVBoxLayout(); mat_box.addWidget(QLabel('Matriz A')); mat_box.addWidget(self.A)
+        v.addLayout(mat_box)
+
+        # Acciones
+        btns = QHBoxLayout()
+        self.btn_inv = QPushButton('Calcular A^{-1} (Gauss–Jordan)')
+        btns.addWidget(self.btn_inv)
+        btns.addStretch()
+        v.addLayout(btns)
+
+        # Salidas
+        self.output = QTextEdit(); self.output.setReadOnly(True); self.output.setFont(QFont('Consolas', 11))
+        v.addWidget(QLabel('Pasos (matriz aumentada [A | I]):'))
+        v.addWidget(self.output)
+
+        self.result = QTextEdit(); self.result.setReadOnly(True); self.result.setFont(QFont('Consolas', 11))
+        v.addWidget(QLabel('Resultado y verificaciones:'))
+        v.addWidget(self.result)
+
+        # Conexiones
+        self.resizeBtn.clicked.connect(self._on_resize)
+        self.btn_inv.clicked.connect(self._compute_inverse)
+
+    def _on_resize(self):
+        n = self.n_spin.value()
+        self.A.setParent(None)
+        self.A = MatrixInput(n, n)
+        # Reinsert A into the mat_box (which is layout index 1)
+        mat_box = QVBoxLayout(); mat_box.addWidget(QLabel('Matriz A')); mat_box.addWidget(self.A)
+        # Replace layout at index 1
+        root = self.layout()
+        old = root.itemAt(1)
+        # Remove the old layout widgets if present
+        if old is not None:
+            lay = old.layout()
+            if lay is not None:
+                while lay.count():
+                    it = lay.takeAt(0)
+                    w = it.widget()
+                    if w:
+                        w.setParent(None)
+                # Remove the layout itself
+                root.removeItem(old)
+        root.insertLayout(1, mat_box)
+
+    def _compute_inverse(self):
+        try:
+            A = self.A.to_matrix()
+            n = A.n
+            if A.m != A.n:
+                raise ValueError('A debe ser cuadrada para calcular su inversa.')
+            I = Matrix.identity(n)
+            aug = A.augmented_with(I)
+            solver = LinearSystemSolver(aug)
+            rref_mat, steps, rank, m = solver.rref()
+
+            # Construir salida de pasos con barra | entre bloques
+            buffs = []
+            for step in steps:
+                full = step.matrix
+                rows = full.rows()
+                left = Matrix([row[:n] for row in rows])
+                right = Matrix([row[n:] for row in rows])
+                lines = join_augmented(left, right)
+                buffs.append(with_op(lines, step.op))
+            self.output.setPlainText(('\n\n~\n\n').join(buffs))
+
+            # Verificar si la parte izquierda es identidad
+            rows = rref_mat.rows()
+            left_final = Matrix([row[:n] for row in rows])
+            right_final = Matrix([row[n:] for row in rows])
+
+            # Checar identidad
+            is_identity = left_final.rows() == Matrix.identity(n).rows()
+            if not is_identity:
+                msg = ['Conclusión: ❌ A no es invertible (la izquierda no es Iₙ).']
+                msg.append('\nMatriz final [A_rref | ? ]:')
+                msg.extend(pretty_matrix(left_final))
+                self.result.setPlainText('\n'.join(msg))
+                return
+
+            # A inversa
+            inv = right_final
+            out = []
+            out.append('Conclusión: ✔️ A es invertible. Se obtuvo A^{-1}.')
+            out.append('\nA^{-1} =')
+            out.extend(pretty_matrix(inv))
+
+            # Verificaciones de propiedades: A·A^{-1} = I y A^{-1}·A = I
+            try:
+                prod1 = A.mul(inv)
+                prod2 = inv.mul(A)
+                I1 = Matrix.identity(n)
+                ok1 = (prod1.rows() == I1.rows())
+                ok2 = (prod2.rows() == I1.rows())
+                out.append('\nVerificación: A · A^{-1} = I → ' + ('✔️' if ok1 else '❌'))
+                out.extend(pretty_matrix(prod1))
+                out.append('\nVerificación: A^{-1} · A = I → ' + ('✔️' if ok2 else '❌'))
+                out.extend(pretty_matrix(prod2))
+            except Exception:
+                pass
+
+            self.result.setPlainText('\n'.join(out))
         except Exception as ex:
             QMessageBox.critical(self, 'Error', str(ex))
