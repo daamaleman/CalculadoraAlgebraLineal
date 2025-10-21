@@ -851,6 +851,14 @@ class MatrixOpsWidget(QWidget):
                     steps.append(f"c[{i+1},{j+1}] = {frac_to_str(k)} · {a} = {c}")
             out.append('\n' + '\n'.join(steps))
 
+            # Mostrar la traspuesta del resultado k · A
+            try:
+                Ct = C.transpose()
+                out.append('\nTraspuesta del resultado: (k · A)ᵀ')
+                out.extend(pretty_matrix(Ct))
+            except Exception:
+                pass
+
             # Propiedad adicional: r(A) = r(Aᵀ)
             try:
                 AT = A.transpose()
