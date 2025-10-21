@@ -728,6 +728,9 @@ class MatrixOpsWidget(QWidget):
         btns2 = QHBoxLayout()
         self.btn_transpose_sum_cmp = QPushButton('(A + B)ᵀ  vs  Aᵀ + Bᵀ')
         btns2.addWidget(self.btn_transpose_sum_cmp)
+        # Nuevo botón para comparar (A-B)^T con A^T - B^T
+        self.btn_transpose_diff_cmp = QPushButton('(A - B)ᵀ  vs  Aᵀ - Bᵀ')
+        btns2.addWidget(self.btn_transpose_diff_cmp)
         btns2.addStretch()
         v.addLayout(btns2)
 
@@ -743,6 +746,7 @@ class MatrixOpsWidget(QWidget):
         self.btn_mul.clicked.connect(self._do_mul)
         self.btn_transpose.clicked.connect(self._do_transpose)
         self.btn_transpose_sum_cmp.clicked.connect(self._do_transpose_sum_compare)
+        self.btn_transpose_diff_cmp.clicked.connect(self._do_transpose_diff_compare)
 
     def _on_resize(self):
         mA, nA, mB, nB = self.mA.value(), self.nA.value(), self.mB.value(), self.nB.value()
@@ -937,6 +941,48 @@ class MatrixOpsWidget(QWidget):
             # Comprobación de igualdad elemento a elemento
             equal = (Ct.rows() == sum_trans.rows())
             out.append('\nResultado de la verificación: ' + ('✔️ (A + B)ᵀ = Aᵀ + Bᵀ' if equal else '❌ No son iguales'))
+
+            self.output.setPlainText('\n'.join(out))
+        except Exception as ex:
+            QMessageBox.critical(self, 'Error', str(ex))
+
+    def _do_transpose_diff_compare(self):
+        try:
+            A = self._get_A(); B = self._get_B()
+            out = [self._fmt_head('Comparación: (A - B)ᵀ  vs  Aᵀ - Bᵀ')]
+            out.append(f"Dimensiones: A es {A.m}×{A.n}, B es {B.m}×{B.n}")
+            if A.m != B.m or A.n != B.n:
+                out.append('❌ No se puede restar A - B: las matrices deben tener igual número de filas y columnas.')
+                self.output.setPlainText('\n'.join(out))
+                return
+
+            # Calcular A - B y su traspuesta
+            D = A.sub(B)
+            Dt = D.transpose()
+
+            # Calcular A^T - B^T
+            At = A.transpose()
+            Bt = B.transpose()
+            diff_trans = At.sub(Bt)
+
+            out.append('\nMatriz A:')
+            out.extend(pretty_matrix(A))
+            out.append('\nMatriz B:')
+            out.extend(pretty_matrix(B))
+            out.append('\nA - B:')
+            out.extend(pretty_matrix(D))
+            out.append('\n(A - B)ᵀ:')
+            out.extend(pretty_matrix(Dt))
+            out.append('\nAᵀ:')
+            out.extend(pretty_matrix(At))
+            out.append('\nBᵀ:')
+            out.extend(pretty_matrix(Bt))
+            out.append('\nAᵀ - Bᵀ:')
+            out.extend(pretty_matrix(diff_trans))
+
+            # Comprobación de igualdad elemento a elemento
+            equal = (Dt.rows() == diff_trans.rows())
+            out.append('\nResultado de la verificación: ' + ('✔️ (A - B)ᵀ = Aᵀ - Bᵀ' if equal else '❌ No son iguales'))
 
             self.output.setPlainText('\n'.join(out))
         except Exception as ex:
