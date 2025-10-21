@@ -893,6 +893,22 @@ class MatrixOpsWidget(QWidget):
                     s_terms = ' + '.join(terms) if terms else '0'
                     steps.append(f"c[{i+1},{j+1}] = {s_terms} = {frac_to_str(C.at(i,j))}")
             out.append('\n' + '\n'.join(steps))
+
+            # Propiedad adicional: (AB)ᵀ = Bᵀ · Aᵀ
+            try:
+                Ct = C.transpose()
+                At = A.transpose()
+                Bt = B.transpose()
+                BtAt = Bt.mul(At)
+                out.append('\nPropiedad de traspuesta del producto: (AB)ᵀ = Bᵀ · Aᵀ')
+                out.append('\n(AB)ᵀ:')
+                out.extend(pretty_matrix(Ct))
+                out.append('\nBᵀ · Aᵀ:')
+                out.extend(pretty_matrix(BtAt))
+                ok = (Ct.rows() == BtAt.rows())
+                out.append('\nResultado de la verificación: ' + ('✔️ (AB)ᵀ = Bᵀ · Aᵀ' if ok else '❌ No son iguales'))
+            except Exception:
+                pass
             self.output.setPlainText('\n'.join(out))
         except Exception as ex:
             QMessageBox.critical(self, 'Error', str(ex))
