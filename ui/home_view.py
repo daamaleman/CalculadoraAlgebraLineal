@@ -12,29 +12,55 @@ class HomeView(QWidget):
         dashboard.setReadOnly(True)
         dashboard.setHtml('''
         <h1>Bienvenido a la Calculadora de Álgebra Lineal</h1>
-        <p>Esta herramienta le permite practicar y resolver operaciones de álgebra lineal.</p>
-        <h2>¿Qué puedes hacer aquí?</h2>
+        <p>Explora operaciones y propiedades clave de álgebra lineal con resultados exactos y pasos tipo pizarrón.</p>
+
+        <h2>Funciones destacadas</h2>
         <ul>
-            <li><b>Matrices:</b> suma, resta, multiplicación por escalar, producto, transposición, identidad.</li>
-            <li><b>Operaciones elementales:</b> filas y columnas, operaciones elementales.</li>
-            <li><b>Sistemas de ecuaciones lineales:</b> matrices aumentadas, resolución paso a paso.</li>
-            <li><b>Forma escalonada y reducida:</b> método de Gauss–Jordan con pasos tipo pizarrón.</li>
+            <li>
+                <b>Operaciones con matrices:</b>
+                suma (A+B), resta (A−B), escalar (k·A), producto (A·B), traspuesta (A<sup>T</sup>) e identidad (I).
+                Verificaciones incluidas:
+                <ul>
+                    <li>(A+B)<sup>T</sup> = A<sup>T</sup> + B<sup>T</sup></li>
+                    <li>(A−B)<sup>T</sup> = A<sup>T</sup> − B<sup>T</sup></li>
+                    <li>(AB)<sup>T</sup> = B<sup>T</sup> A<sup>T</sup></li>
+                    <li>En k·A: se muestra (k·A)<sup>T</sup> y la propiedad de rango r(A) = r(A<sup>T</sup>).</li>
+                </ul>
+            </li>
+            <li>
+                <b>Inversa Matriz:</b>
+                cálculo por Gauss–Jordan de [A | I] → [I | A<sup>−1</sup>], con pasos detallados. Incluye:
+                <ul>
+                    <li>Determinante det(A) y clasificación: <i>singular</i> si det(A)=0 (no invertible) vs <i>no singular</i> si det(A)≠0 (invertible).</li>
+                    <li>Propiedades de invertibilidad: (c) pivotes en cada fila, (d) única solución a AX=0 (trivial), (e) columnas linealmente independientes.</li>
+                    <li>Mensaje explícito cuando A <u>no tiene pivote en cada fila</u>.</li>
+                </ul>
+            </li>
+            <li>
+                <b>Sistemas y Gauss–Jordan:</b>
+                resolución de AX=0 y AX=B con matrices aumentadas y forma escalonada reducida, mostrando cada operación elemental.
+            </li>
+            <li>
+                <b>Vectores y ℝ<sup>n</sup>:</b>
+                suma, resta y escalar de vectores; combinación lineal y ecuación vectorial; propiedades en ℝ<sup>n</sup>; dependencia lineal.
+            </li>
         </ul>
-        <h2>¿Cómo usar la calculadora?</h2>
+
+        <h2>Cómo usarla</h2>
         <ol>
-            <li>Selecciona la pestaña de la función que deseas usar.</li>
-            <li>Ingresa los valores en las casillas correspondientes. Puedes usar fracciones (ejemplo: 2/3) o decimales (ejemplo: 1.5).</li>
-            <li>Presiona el botón correspondiente para realizar la operación.</li>
-            <li>Observa los resultados y, si corresponde, los pasos intermedios.</li>
+            <li>Ve a la pestaña de la función que necesites.</li>
+            <li>Ingresa matrices/vectores. Puedes usar fracciones (p. ej., 2/3) o decimales (p. ej., 1.5).</li>
+            <li>Ejecuta la operación y revisa los resultados y los pasos intermedios cuando apliquen.</li>
         </ol>
-        <p>¡Explora las pestañas y aprende álgebra lineal de manera interactiva!</p>
+
+        <p>Consejo: cuando compares propiedades (por ejemplo, traspuestas), la herramienta muestra ambos lados y si son iguales.</p>
         ''')
         tabs.addTab(dashboard, 'Dashboard')
 
         # Tabs para cada funcionalidad
         tabs.addTab(VectorArithmeticWidget(), 'Suma/Resta/Escalar de Vectores')
         tabs.addTab(MatrixOpsWidget(), 'Operaciones con Matrices')
-        tabs.addTab(MatrixInverseWidget(), 'Invertir Matriz')
+        tabs.addTab(MatrixInverseWidget(), 'Inversa Matriz')
         tabs.addTab(VectorPropertiesWidget(), 'Propiedades de ℝⁿ')
         tabs.addTab(LinearCombinationWidget(), 'Combinación Lineal / Ecuación Vectorial')
         tabs.addTab(MatrixEquationWidget(), 'Ecuación Matricial (AX=B)')
