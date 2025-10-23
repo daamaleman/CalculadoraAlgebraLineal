@@ -1098,6 +1098,11 @@ class MatrixInverseWidget(QWidget):
             n = A.n
             if A.m != A.n:
                 raise ValueError('A debe ser cuadrada para calcular su inversa.')
+            # Determinante para clasificar singularidad
+            try:
+                detA = self._determinant(A)
+            except Exception:
+                detA = None
             I = Matrix.identity(n)
             aug = A.augmented_with(I)
             solver = LinearSystemSolver(aug)
@@ -1135,6 +1140,14 @@ class MatrixInverseWidget(QWidget):
                 msg = [head]
                 if detalle:
                     msg.append(detalle)
+                # Mostrar determinante y clasificación
+                if detA is not None:
+                    from core.formatter import frac_to_str
+                    msg.append(f"det(A) = {frac_to_str(detA)}")
+                    if detA == 0:
+                        msg.append('Clasificación: A es singular (det(A) = 0) ⇒ no invertible.')
+                    else:
+                        msg.append('Clasificación: A es no singular (det(A) ≠ 0) ⇒ invertible.')
                 msg.append('\nMatriz final [A_rref | ? ]:')
                 msg.extend(pretty_matrix(left_final))
                 self.result.setPlainText('\n'.join(msg))
@@ -1146,6 +1159,18 @@ class MatrixInverseWidget(QWidget):
             out.append('Conclusión: ✔️ A es invertible. Se obtuvo A^{-1}.')
             out.append('\nA^{-1} =')
             out.extend(pretty_matrix(inv))
+            # Determinante y clasificación
+            try:
+                from core.formatter import frac_to_str
+                if detA is not None:
+                    out.append('\nDeterminante:')
+                    out.append(f"det(A) = {frac_to_str(detA)}")
+                    if detA == 0:
+                        out.append('Clasificación: A es singular (det(A) = 0) ⇒ no invertible.')
+                    else:
+                        out.append('Clasificación: A es no singular (det(A) ≠ 0) ⇒ invertible.')
+            except Exception:
+                pass
 
             # Verificaciones de propiedades: A·A^{-1} = I y A^{-1}·A = I
             try:
@@ -1164,6 +1189,43 @@ class MatrixInverseWidget(QWidget):
             self.result.setPlainText('\n'.join(out))
         except Exception as ex:
             QMessageBox.critical(self, 'Error', str(ex))
+
+    def _determinant(self, A: Matrix):
+        """Calcula det(A) por eliminación gaussiana sin escalado de filas.
+        Solo intercambia filas (cambia el signo) y suma múltiplos de filas (no cambia el determinante).
+        """
+        if A.m != A.n:
+            raise ValueError('La determinante solo está definida para matrices cuadradas.')
+        n = A.n
+        # Copia mutable de A
+        M = [[A.at(i, j) for j in range(n)] for i in range(n)]
+        sign = 1
+        for i in range(n):
+            # Buscar pivote en o debajo de i
+            pivot_row = None
+            for r in range(i, n):
+                if M[r][i] != 0:
+                    pivot_row = r
+                    break
+            if pivot_row is None:
+                return 0
+            if pivot_row != i:
+                M[i], M[pivot_row] = M[pivot_row], M[i]
+                sign *= -1
+            # Eliminar por debajo
+            piv = M[i][i]
+            for r in range(i + 1, n):
+                if M[r][i] == 0:
+                    continue
+                factor = M[r][i] / piv
+                # Rr <- Rr - factor * Ri
+                for c in range(i, n):
+                    M[r][c] = M[r][c] - factor * M[i][c]
+        # Producto de diagonales
+        det = sign
+        for i in range(n):
+            det = det * M[i][i]
+        return det
 
     def _update_invertibility_properties(self, left_final: Matrix, n: int):
         rows = left_final.rows()
