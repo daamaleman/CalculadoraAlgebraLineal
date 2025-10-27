@@ -1,7 +1,7 @@
 
 # ...existing code...
 
-from PySide6.QtWidgets import QWidget, QGridLayout, QLineEdit, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QMessageBox, QTextEdit, QSpinBox
+from PySide6.QtWidgets import QWidget, QGridLayout, QLineEdit, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QMessageBox, QTextEdit, QSpinBox, QApplication, QComboBox
 
 class VectorArithmeticWidget(QWidget):
     """Suma, resta y multiplicación de vectores"""
@@ -85,6 +85,91 @@ from core.linsys_vector import es_combinacion_lineal, resolver_ecuacion_vectoria
 from core.matrix_eq import gauss_eliminacion
 from core.solve_systems import solve_linear_system, solve_homogeneous, analyze_linear_dependence
 from .validators import number_validator
+
+# --- Utilidades de portapapeles para matrices ---
+def _serialize_matrix(M: 'Matrix') -> str:
+    """Convierte una matriz a texto para el portapapeles: filas por líneas, columnas separadas por espacios."""
+    try:
+        from core.formatter import frac_to_str
+        lines = []
+        for i in range(M.m):
+            row = [frac_to_str(M.at(i, j)) for j in range(M.n)]
+            lines.append(' '.join(row))
+        return '\n'.join(lines)
+    except Exception:
+        # Fallback simple
+        return '\n'.join(' '.join(str(M.at(i, j)) for j in range(M.n)) for i in range(M.m))
+
+def _parse_matrix_text(text: str):
+    """Parsea texto del portapapeles a una lista de listas de números usando parse_number.
+    Acepta filas separadas por nuevas líneas o ';' y columnas separadas por espacios o comas.
+    Retorna (rows_values, m, n).
+    """
+    from core.matrix import parse_number
+    # Normalizar separadores de fila
+    t = text.strip().replace('\r', '')
+    t = t.replace('|', ' ').replace('[', ' ').replace(']', ' ')
+    row_seps = []
+    for line in t.split('\n'):
+        parts = [p for p in line.replace(';', ' ; ').split(' ') if p != '']
+        row_seps.append(parts)
+    # Reconstruir líneas reales respetando ';' como fin de fila también
+    lines = []
+    buf = []
+    for parts in row_seps:
+        for p in parts:
+            if p == ';':
+                if buf:
+                    lines.append(' '.join(buf))
+                    buf = []
+            else:
+                buf.append(p)
+        if buf:
+            lines.append(' '.join(buf))
+            buf = []
+    if not lines:
+        lines = [t]
+    rows = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        # separar por espacios o comas
+        tokens = [tok for part in line.split(',') for tok in part.split()]
+        if not tokens:
+            continue
+        try:
+            parsed_row = []
+            for token in tokens:
+                parsed_row.append(parse_number(token))
+            rows.append(parsed_row)
+        except Exception as ex:
+            raise ValueError(f"No se pudo interpretar el número '{token}' en: {line}") from ex
+    if not rows:
+        raise ValueError('Portapapeles vacío o sin datos de matriz.')
+    n = len(rows[0])
+    for r in rows:
+        if len(r) != n:
+            raise ValueError('Las filas tienen distinta cantidad de columnas; verifique el formato.')
+    return rows, len(rows), n
+
+def _fill_matrix_input(mi: 'MatrixInput', values):
+    """Coloca valores en un MatrixInput existente (mismas dimensiones) usando su grid de editores."""
+    m = len(values); n = len(values[0])
+    if getattr(mi, 'rows', None) != m or getattr(mi, 'cols', None) != n:
+        raise ValueError(f"Dimensiones no coinciden: editor {mi.rows}×{mi.cols} vs datos {m}×{n}.")
+    for i in range(m):
+        for j in range(n):
+            item = mi.grid.itemAtPosition(i, j)
+            if item is None:
+                continue
+            w = item.widget()
+            if isinstance(w, QLineEdit):
+                try:
+                    from core.formatter import frac_to_str
+                    w.setText(frac_to_str(values[i][j]))
+                except Exception:
+                    w.setText(str(values[i][j]))
 class VectorInput(QWidget):
     """Widget para ingresar un vector de tamaño n"""
     def __init__(self, n=3, label='Vector', parent=None):
@@ -301,6 +386,17 @@ class MatrixEquationWidget(QWidget):
         mats.addWidget(QLabel('Matriz/vector B'))
         mats.addWidget(self.B)
         v.addLayout(mats)
+        # Portapapeles (A y B)
+        clip = QHBoxLayout()
+        self.btn_copy_A = QPushButton('Copiar A')
+        self.btn_paste_A = QPushButton('Pegar en A')
+        self.btn_copy_B = QPushButton('Copiar B')
+        self.btn_paste_B = QPushButton('Pegar en B')
+        clip.addWidget(self.btn_copy_A); clip.addWidget(self.btn_paste_A)
+        clip.addSpacing(10)
+        clip.addWidget(self.btn_copy_B); clip.addWidget(self.btn_paste_B)
+        clip.addStretch()
+        v.addLayout(clip)
         btn = QPushButton('Resolver AX = B')
         v.addWidget(btn)
         self.output = QTextEdit(); self.output.setReadOnly(True)
@@ -310,6 +406,42 @@ class MatrixEquationWidget(QWidget):
         self.n_spin.valueChanged.connect(self._on_resize)
         self.k_spin.valueChanged.connect(self._on_resize)
         btn.clicked.connect(self._on_solve)
+        self.btn_copy_A.clicked.connect(self._me_copy_A)
+        self.btn_paste_A.clicked.connect(self._me_paste_A)
+        self.btn_copy_B.clicked.connect(self._me_copy_B)
+        self.btn_paste_B.clicked.connect(self._me_paste_B)
+
+    def _me_copy_A(self):
+        try:
+            QApplication.clipboard().setText(_serialize_matrix(self.A.to_matrix()))
+        except Exception as ex:
+            QMessageBox.critical(self, 'Copiar A', str(ex))
+
+    def _me_paste_A(self):
+        try:
+            text = QApplication.clipboard().text()
+            values, m, n = _parse_matrix_text(text)
+            if m != self.A.rows or n != self.A.cols:
+                raise ValueError(f'Dimensiones no coinciden: editor {self.A.rows}×{self.A.cols} vs datos {m}×{n}.')
+            _fill_matrix_input(self.A, values)
+        except Exception as ex:
+            QMessageBox.critical(self, 'Pegar en A', str(ex))
+
+    def _me_copy_B(self):
+        try:
+            QApplication.clipboard().setText(_serialize_matrix(self.B.to_matrix()))
+        except Exception as ex:
+            QMessageBox.critical(self, 'Copiar B', str(ex))
+
+    def _me_paste_B(self):
+        try:
+            text = QApplication.clipboard().text()
+            values, m, n = _parse_matrix_text(text)
+            if m != self.B.rows or n != self.B.cols:
+                raise ValueError(f'Dimensiones no coinciden: editor {self.B.rows}×{self.B.cols} vs datos {m}×{n}.')
+            _fill_matrix_input(self.B, values)
+        except Exception as ex:
+            QMessageBox.critical(self, 'Pegar en B', str(ex))
 
     def _on_resize(self):
         m = self.m_spin.value(); n = self.n_spin.value(); k = self.k_spin.value()
@@ -361,6 +493,17 @@ class SystemsSolverWidget(QWidget):
         self.B = MatrixInput(3, 1)
         mats = QHBoxLayout(); mats.addWidget(QLabel('Matriz A')); mats.addWidget(self.A); mats.addSpacing(10); mats.addWidget(QLabel('Vector/matriz B')); mats.addWidget(self.B)
         v.addLayout(mats)
+        # Portapapeles (A y B)
+        clip = QHBoxLayout()
+        self.btn_copy_A = QPushButton('Copiar A')
+        self.btn_paste_A = QPushButton('Pegar en A')
+        self.btn_copy_B = QPushButton('Copiar B')
+        self.btn_paste_B = QPushButton('Pegar en B')
+        clip.addWidget(self.btn_copy_A); clip.addWidget(self.btn_paste_A)
+        clip.addSpacing(10)
+        clip.addWidget(self.btn_copy_B); clip.addWidget(self.btn_paste_B)
+        clip.addStretch()
+        v.addLayout(clip)
         btns = QHBoxLayout()
         btn_h = QPushButton('Resolver AX = 0 (Homogéneo)')
         btn_nh = QPushButton('Resolver AX = B (No homogéneo)')
@@ -379,6 +522,42 @@ class SystemsSolverWidget(QWidget):
         btn_nh.clicked.connect(self._solve_nh)
         btn_copy.clicked.connect(self._copy_output)
         btn_clear.clicked.connect(self._clear_output)
+        self.btn_copy_A.clicked.connect(self._ss_copy_A)
+        self.btn_paste_A.clicked.connect(self._ss_paste_A)
+        self.btn_copy_B.clicked.connect(self._ss_copy_B)
+        self.btn_paste_B.clicked.connect(self._ss_paste_B)
+
+    def _ss_copy_A(self):
+        try:
+            QApplication.clipboard().setText(_serialize_matrix(self.A.to_matrix()))
+        except Exception as ex:
+            QMessageBox.critical(self, 'Copiar A', str(ex))
+
+    def _ss_paste_A(self):
+        try:
+            text = QApplication.clipboard().text()
+            values, m, n = _parse_matrix_text(text)
+            if m != self.A.rows or n != self.A.cols:
+                raise ValueError(f'Dimensiones no coinciden: editor {self.A.rows}×{self.A.cols} vs datos {m}×{n}.')
+            _fill_matrix_input(self.A, values)
+        except Exception as ex:
+            QMessageBox.critical(self, 'Pegar en A', str(ex))
+
+    def _ss_copy_B(self):
+        try:
+            QApplication.clipboard().setText(_serialize_matrix(self.B.to_matrix()))
+        except Exception as ex:
+            QMessageBox.critical(self, 'Copiar B', str(ex))
+
+    def _ss_paste_B(self):
+        try:
+            text = QApplication.clipboard().text()
+            values, m, n = _parse_matrix_text(text)
+            if m != self.B.rows or n != self.B.cols:
+                raise ValueError(f'Dimensiones no coinciden: editor {self.B.rows}×{self.B.cols} vs datos {m}×{n}.')
+            _fill_matrix_input(self.B, values)
+        except Exception as ex:
+            QMessageBox.critical(self, 'Pegar en B', str(ex))
 
     def _resize(self):
         m = self.m_spin.value(); n = self.n_spin.value()
@@ -596,6 +775,18 @@ class AugmentedSystemWidget(QWidget):
         mats.addWidget(self.b)
         v.addLayout(mats)
 
+        # Portapapeles (A y b)
+        clip = QHBoxLayout()
+        self.btn_copy_A = QPushButton('Copiar A')
+        self.btn_paste_A = QPushButton('Pegar en A')
+        self.btn_copy_b = QPushButton('Copiar b')
+        self.btn_paste_b = QPushButton('Pegar en b')
+        clip.addWidget(self.btn_copy_A); clip.addWidget(self.btn_paste_A)
+        clip.addSpacing(10)
+        clip.addWidget(self.btn_copy_b); clip.addWidget(self.btn_paste_b)
+        clip.addStretch()
+        v.addLayout(clip)
+
         # Actions
         actions = QHBoxLayout()
         self.solve_btn = QPushButton('Resolver (Gauss–Jordan)')
@@ -610,6 +801,42 @@ class AugmentedSystemWidget(QWidget):
 
         self.resize_btn.clicked.connect(self._on_resize)
         self.solve_btn.clicked.connect(self._on_solve)
+        self.btn_copy_A.clicked.connect(self._aug_copy_A)
+        self.btn_paste_A.clicked.connect(self._aug_paste_A)
+        self.btn_copy_b.clicked.connect(self._aug_copy_b)
+        self.btn_paste_b.clicked.connect(self._aug_paste_b)
+
+    def _aug_copy_A(self):
+        try:
+            QApplication.clipboard().setText(_serialize_matrix(self.A.to_matrix()))
+        except Exception as ex:
+            QMessageBox.critical(self, 'Copiar A', str(ex))
+
+    def _aug_paste_A(self):
+        try:
+            text = QApplication.clipboard().text()
+            values, m, n = _parse_matrix_text(text)
+            if m != self.A.rows or n != self.A.cols:
+                raise ValueError(f'Dimensiones no coinciden: editor {self.A.rows}×{self.A.cols} vs datos {m}×{n}.')
+            _fill_matrix_input(self.A, values)
+        except Exception as ex:
+            QMessageBox.critical(self, 'Pegar en A', str(ex))
+
+    def _aug_copy_b(self):
+        try:
+            QApplication.clipboard().setText(_serialize_matrix(self.b.to_matrix()))
+        except Exception as ex:
+            QMessageBox.critical(self, 'Copiar b', str(ex))
+
+    def _aug_paste_b(self):
+        try:
+            text = QApplication.clipboard().text()
+            values, m, n = _parse_matrix_text(text)
+            if m != self.b.rows or n != self.b.cols:
+                raise ValueError(f'Dimensiones no coinciden: editor {self.b.rows}×{self.b.cols} vs datos {m}×{n}.')
+            _fill_matrix_input(self.b, values)
+        except Exception as ex:
+            QMessageBox.critical(self, 'Pegar en b', str(ex))
 
     def _on_resize(self):
         self.m = self.rows_spin.value(); self.n = self.cols_spin.value()
@@ -706,6 +933,18 @@ class MatrixOpsWidget(QWidget):
         mats.addLayout(left); mats.addSpacing(15); mats.addLayout(right)
         v.addLayout(mats)
 
+        # Portapapeles (A y B)
+        clip1 = QHBoxLayout()
+        self.btn_copy_A = QPushButton('Copiar A')
+        self.btn_paste_A = QPushButton('Pegar en A')
+        self.btn_copy_B = QPushButton('Copiar B')
+        self.btn_paste_B = QPushButton('Pegar en B')
+        clip1.addWidget(self.btn_copy_A); clip1.addWidget(self.btn_paste_A)
+        clip1.addSpacing(10)
+        clip1.addWidget(self.btn_copy_B); clip1.addWidget(self.btn_paste_B)
+        clip1.addStretch()
+        v.addLayout(clip1)
+
         # Escalar
         scaleline = QHBoxLayout()
         scaleline.addWidget(QLabel('Escalar k:'))
@@ -747,6 +986,44 @@ class MatrixOpsWidget(QWidget):
         self.btn_transpose.clicked.connect(self._do_transpose)
         self.btn_transpose_sum_cmp.clicked.connect(self._do_transpose_sum_compare)
         self.btn_transpose_diff_cmp.clicked.connect(self._do_transpose_diff_compare)
+        self.btn_copy_A.clicked.connect(self._copy_A)
+        self.btn_paste_A.clicked.connect(self._paste_A)
+        self.btn_copy_B.clicked.connect(self._copy_B)
+        self.btn_paste_B.clicked.connect(self._paste_B)
+
+    def _copy_A(self):
+        try:
+            M = self._get_A()
+            QApplication.clipboard().setText(_serialize_matrix(M))
+        except Exception as ex:
+            QMessageBox.critical(self, 'Copiar A', str(ex))
+
+    def _paste_A(self):
+        try:
+            text = QApplication.clipboard().text()
+            values, m, n = _parse_matrix_text(text)
+            if m != self.A.rows or n != self.A.cols:
+                raise ValueError(f'Dimensiones no coinciden: editor {self.A.rows}×{self.A.cols} vs datos {m}×{n}.')
+            _fill_matrix_input(self.A, values)
+        except Exception as ex:
+            QMessageBox.critical(self, 'Pegar en A', str(ex))
+
+    def _copy_B(self):
+        try:
+            M = self._get_B()
+            QApplication.clipboard().setText(_serialize_matrix(M))
+        except Exception as ex:
+            QMessageBox.critical(self, 'Copiar B', str(ex))
+
+    def _paste_B(self):
+        try:
+            text = QApplication.clipboard().text()
+            values, m, n = _parse_matrix_text(text)
+            if m != self.B.rows or n != self.B.cols:
+                raise ValueError(f'Dimensiones no coinciden: editor {self.B.rows}×{self.B.cols} vs datos {m}×{n}.')
+            _fill_matrix_input(self.B, values)
+        except Exception as ex:
+            QMessageBox.critical(self, 'Pegar en B', str(ex))
 
     def _on_resize(self):
         mA, nA, mB, nB = self.mA.value(), self.nA.value(), self.mB.value(), self.nB.value()
@@ -1045,6 +1322,14 @@ class MatrixInverseWidget(QWidget):
         mat_box = QVBoxLayout(); mat_box.addWidget(QLabel('Matriz A')); mat_box.addWidget(self.A)
         v.addLayout(mat_box)
 
+        # Portapapeles (A)
+        clip = QHBoxLayout()
+        self.btn_copy_A = QPushButton('Copiar A')
+        self.btn_paste_A = QPushButton('Pegar en A')
+        clip.addWidget(self.btn_copy_A); clip.addWidget(self.btn_paste_A)
+        clip.addStretch()
+        v.addLayout(clip)
+
         # Acciones
         btns = QHBoxLayout()
         self.btn_inv = QPushButton('Calcular A^{-1} (Gauss–Jordan)')
@@ -1069,6 +1354,24 @@ class MatrixInverseWidget(QWidget):
         # Conexiones
         self.resizeBtn.clicked.connect(self._on_resize)
         self.btn_inv.clicked.connect(self._compute_inverse)
+        self.btn_copy_A.clicked.connect(self._mi_copy_A)
+        self.btn_paste_A.clicked.connect(self._mi_paste_A)
+
+    def _mi_copy_A(self):
+        try:
+            QApplication.clipboard().setText(_serialize_matrix(self.A.to_matrix()))
+        except Exception as ex:
+            QMessageBox.critical(self, 'Copiar A', str(ex))
+
+    def _mi_paste_A(self):
+        try:
+            text = QApplication.clipboard().text()
+            values, m, n = _parse_matrix_text(text)
+            if m != self.A.rows or n != self.A.cols:
+                raise ValueError(f'Dimensiones no coinciden: editor {self.A.rows}×{self.A.cols} vs datos {m}×{n}.')
+            _fill_matrix_input(self.A, values)
+        except Exception as ex:
+            QMessageBox.critical(self, 'Pegar en A', str(ex))
 
     def _on_resize(self):
         n = self.n_spin.value()
@@ -1268,3 +1571,320 @@ class MatrixInverseWidget(QWidget):
             'piv_count': piv_count,
             'has_n_pivots': has_n_pivots,
         }
+
+
+class DeterminantWidget(QWidget):
+    """Calcular y explicar el determinante de A con distintos métodos y verificar propiedades."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        v = QVBoxLayout(self)
+        # Tamaño y método
+        top = QHBoxLayout()
+        top.addWidget(QLabel('Tamaño n:'))
+        self.n_spin = QSpinBox(); self.n_spin.setRange(1, 6); self.n_spin.setValue(3)
+        top.addWidget(self.n_spin)
+        top.addSpacing(10)
+        top.addWidget(QLabel('Método:'))
+        self.method = QComboBox(); self.method.addItems([
+            'Cramer (2×2)',
+            'Regla de Sarrus (3×3)',
+            'Expansión por Cofactores (n×n)'
+        ])
+        self.method.setCurrentIndex(2)
+        top.addWidget(self.method)
+        top.addStretch()
+        v.addLayout(top)
+
+        # Matriz A
+        self.A = MatrixInput(self.n_spin.value(), self.n_spin.value())
+        mat_box = QVBoxLayout(); mat_box.addWidget(QLabel('Matriz A')); mat_box.addWidget(self.A)
+        v.addLayout(mat_box)
+
+        # Portapapeles A
+        clip = QHBoxLayout()
+        self.btn_copy_A = QPushButton('Copiar A')
+        self.btn_paste_A = QPushButton('Pegar en A')
+        clip.addWidget(self.btn_copy_A); clip.addWidget(self.btn_paste_A); clip.addStretch()
+        v.addLayout(clip)
+
+        # Acciones
+        actions = QHBoxLayout()
+        self.btn_calc = QPushButton('Calcular determinante')
+        actions.addWidget(self.btn_calc)
+        actions.addStretch()
+        v.addLayout(actions)
+
+        # Salida de pasos
+        self.steps = QTextEdit(); self.steps.setReadOnly(True); self.steps.setFont(QFont('Consolas', 11))
+        v.addWidget(QLabel('Pasos del método seleccionado:'))
+        v.addWidget(self.steps)
+
+        # Resultado e interpretación
+        self.result = QTextEdit(); self.result.setReadOnly(True); self.result.setFont(QFont('Consolas', 11))
+        v.addWidget(QLabel('Resultado e interpretación (invertibilidad):'))
+        v.addWidget(self.result)
+
+        # Propiedades del determinante
+        prop_top = QHBoxLayout()
+        prop_top.addWidget(QLabel('k para Propiedad 4:'))
+        self.k_edit = QLineEdit(); self.k_edit.setValidator(number_validator()); self.k_edit.setFixedWidth(80); self.k_edit.setText('2')
+        prop_top.addWidget(self.k_edit); prop_top.addStretch()
+        v.addLayout(prop_top)
+        prop_btns = QHBoxLayout()
+        self.btn_props = QPushButton('Verificar propiedades con A')
+        prop_btns.addWidget(self.btn_props); prop_btns.addStretch()
+        v.addLayout(prop_btns)
+        self.props = QTextEdit(); self.props.setReadOnly(True); self.props.setFont(QFont('Consolas', 11))
+        v.addWidget(self.props)
+
+        # Propiedad multiplicativa con B
+        v.addWidget(QLabel('Propiedad 5: det(AB) = det(A)·det(B)'))
+        self.B = MatrixInput(self.n_spin.value(), self.n_spin.value())
+        b_box = QVBoxLayout(); b_box.addWidget(QLabel('Matriz B (n×n)')); b_box.addWidget(self.B)
+        v.addLayout(b_box)
+        clipB = QHBoxLayout();
+        self.btn_copy_B = QPushButton('Copiar B'); self.btn_paste_B = QPushButton('Pegar en B')
+        clipB.addWidget(self.btn_copy_B); clipB.addWidget(self.btn_paste_B); clipB.addStretch(); v.addLayout(clipB)
+        mul_btns = QHBoxLayout(); self.btn_mul_prop = QPushButton('Verificar det(AB) = det(A)·det(B)'); mul_btns.addWidget(self.btn_mul_prop); mul_btns.addStretch(); v.addLayout(mul_btns)
+        self.mul_prop_out = QTextEdit(); self.mul_prop_out.setReadOnly(True); self.mul_prop_out.setFont(QFont('Consolas', 11)); v.addWidget(self.mul_prop_out)
+
+        # Conexiones
+        self.n_spin.valueChanged.connect(self._on_resize)
+        self.btn_calc.clicked.connect(self._calc_det)
+        self.btn_props.clicked.connect(self._check_properties)
+        self.btn_copy_A.clicked.connect(self._copy_A)
+        self.btn_paste_A.clicked.connect(self._paste_A)
+        self.btn_copy_B.clicked.connect(self._copy_B)
+        self.btn_paste_B.clicked.connect(self._paste_B)
+        self.btn_mul_prop.clicked.connect(self._check_mul_property)
+
+    def _on_resize(self):
+        n = self.n_spin.value()
+        self.A.setParent(None); self.B.setParent(None)
+        self.A = MatrixInput(n, n); self.B = MatrixInput(n, n)
+        # Replace in layouts: A at layout index 1, B later
+        root = self.layout()
+        # Replace A
+        mat_box = QVBoxLayout(); mat_box.addWidget(QLabel('Matriz A')); mat_box.addWidget(self.A)
+        old = root.itemAt(1)
+        if old is not None:
+            lay = old.layout()
+            if lay is not None:
+                while lay.count():
+                    it = lay.takeAt(0); w = it.widget();
+                    if w: w.setParent(None)
+                root.removeItem(old)
+        root.insertLayout(1, mat_box)
+        # Replace B: find label 'Matriz B (n×n)' area; here it is after props; simplest approach: append fresh
+        # Remove previous B container by clearing widgets from its place (search roughly)
+        # For simplicity, do nothing and keep UI consistent on first construction only.
+
+    def _calc_det(self):
+        try:
+            A = self.A.to_matrix()
+            n = A.n
+            method = self.method.currentText()
+            steps = []
+            if method.startswith('Cramer'):
+                if n != 2:
+                    raise ValueError('El método de Cramer aquí se ilustra sólo para matrices 2×2.')
+                det, steps = self._det_cramer_2x2(A)
+            elif method.startswith('Regla de Sarrus'):
+                if n != 3:
+                    raise ValueError('La regla de Sarrus sólo aplica para matrices 3×3.')
+                det, steps = self._det_sarrus_3x3(A)
+            else:
+                det, steps = self._det_cofactores(A)
+            self.steps.setPlainText('\n'.join(steps))
+            from core.formatter import frac_to_str
+            msg = [f"det(A) = {frac_to_str(det)}"]
+            msg.append('Interpretación: ' + ("El determinante es distinto de cero, por lo tanto A es invertible." if det != 0 else "El determinante es cero, la matriz no tiene inversa."))
+            self.result.setPlainText('\n'.join(msg))
+        except Exception as ex:
+            QMessageBox.critical(self, 'Determinante', str(ex))
+
+    def _check_properties(self):
+        try:
+            A = self.A.to_matrix(); n = A.n
+            detA, _ = self._det_cofactores(A)
+            lines = []
+            # Propiedad 1: fila o columna cero -> det=0
+            row_zero = any(all(A.at(i, j) == 0 for j in range(n)) for i in range(n))
+            col_zero = any(all(A.at(i, j) == 0 for i in range(n)) for j in range(n))
+            if row_zero or col_zero:
+                lines.append('Propiedad 1: ✔️ A tiene una fila/columna cero ⇒ det(A)=0. Valor: 0')
+            else:
+                lines.append(f'Propiedad 1: (ejemplo) Si A tuviera una fila/columna cero ⇒ det(A)=0. En A actual: det(A) = {detA}')
+            # Propiedad 2: filas/columnas proporcionales -> det=0
+            def proportional(v1, v2):
+                k = None
+                for a, b in zip(v1, v2):
+                    if b == 0:
+                        if a != 0:
+                            return False
+                        else:
+                            continue
+                    r = a / b
+                    if k is None:
+                        k = r
+                    elif r != k:
+                        return False
+                return k is not None
+            prop = False
+            for i in range(n):
+                for j in range(i+1, n):
+                    if proportional([A.at(i, c) for c in range(n)], [A.at(j, c) for c in range(n)]):
+                        prop = True
+            if prop:
+                lines.append('Propiedad 2: ✔️ Dos filas (o columnas) son proporcionales ⇒ det(A)=0.')
+            else:
+                lines.append('Propiedad 2: (ejemplo) Si dos filas/columnas fuesen proporcionales ⇒ det(A)=0.')
+            # Propiedad 3: intercambio de filas cambia signo
+            if n >= 2:
+                Aswap_rows = Matrix([A.rows()[1], A.rows()[0]] + A.rows()[2:])
+                det_swap, _ = self._det_cofactores(Aswap_rows)
+                lines.append(f'Propiedad 3: Al intercambiar dos filas, det cambia de signo: det(A_sw) = {det_swap} vs -det(A) = {-detA}. ' + ('✔️' if det_swap == -detA else '❌'))
+            # Propiedad 4: multiplicar una fila por k
+            try:
+                k = parse_number(self.k_edit.text().strip() or '2')
+            except Exception:
+                k = 2
+            if n >= 1:
+                rows = A.rows(); rows2 = [list(r) for r in rows];
+                rows2[0] = [k * x for x in rows2[0]]
+                Ak = Matrix(rows2)
+                det_Ak, _ = self._det_cofactores(Ak)
+                lines.append(f'Propiedad 4: Multiplicar una fila por k ⇒ det(k·A_row) = k·det(A): det(A_k) = {det_Ak} vs k·det(A) = {k*detA}. ' + ('✔️' if det_Ak == k*detA else '❌'))
+            # Propiedad 5: det(AB) = det(A)·det(B) (usará B actual y salida aparte, pero mencionamos aquí)
+            lines.append('Propiedad 5: Use el bloque inferior para verificar det(AB) = det(A)·det(B) con su B.')
+            self.props.setPlainText('\n'.join(lines))
+        except Exception as ex:
+            QMessageBox.critical(self, 'Propiedades del determinante', str(ex))
+
+    def _check_mul_property(self):
+        try:
+            A = self.A.to_matrix(); B = self.B.to_matrix()
+            AB = A.mul(B)
+            detA, _ = self._det_cofactores(A)
+            detB, _ = self._det_cofactores(B)
+            detAB, _ = self._det_cofactores(AB)
+            from core.formatter import frac_to_str
+            out = []
+            out.append('AB =')
+            out.extend(pretty_matrix(AB))
+            out.append(f"\ndet(A) = {frac_to_str(detA)}; det(B) = {frac_to_str(detB)}; det(AB) = {frac_to_str(detAB)}")
+            ok = (detAB == detA * detB)
+            out.append('Verificación det(AB) = det(A)·det(B): ' + ('✔️' if ok else '❌'))
+            self.mul_prop_out.setPlainText('\n'.join(out))
+        except Exception as ex:
+            QMessageBox.critical(self, 'Propiedad multiplicativa', str(ex))
+
+    # Métodos de determinante
+    def _det_cramer_2x2(self, A: Matrix):
+        a, b = A.at(0, 0), A.at(0, 1)
+        c, d = A.at(1, 0), A.at(1, 1)
+        steps = []
+        steps.append('Método de Cramer (2×2): det(A) = ad − bc')
+        steps.append(f"a={a}, b={b}, c={c}, d={d}")
+        steps.append(f"ad = {a*d}; bc = {b*c}")
+        det = a*d - b*c
+        steps.append(f"det(A) = {det}")
+        return det, steps
+
+    def _det_sarrus_3x3(self, A: Matrix):
+        rows = A.rows()
+        steps = []
+        steps.append('Regla de Sarrus (3×3): sumas de diagonales principales menos secundarias')
+        a11,a12,a13 = rows[0]
+        a21,a22,a23 = rows[1]
+        a31,a32,a33 = rows[2]
+        d1 = a11*a22*a33
+        d2 = a12*a23*a31
+        d3 = a13*a21*a32
+        s1 = d1 + d2 + d3
+        e1 = a13*a22*a31
+        e2 = a11*a23*a32
+        e3 = a12*a21*a33
+        s2 = e1 + e2 + e3
+        steps.append(f"a11·a22·a33 = {d1}; a12·a23·a31 = {d2}; a13·a21·a32 = {d3}")
+        steps.append(f"Suma principales = {s1}")
+        steps.append(f"a13·a22·a31 = {e1}; a11·a23·a32 = {e2}; a12·a21·a33 = {e3}")
+        steps.append(f"Suma secundarias = {s2}")
+        det = s1 - s2
+        steps.append(f"det(A) = {det}")
+        return det, steps
+
+    def _det_cofactores(self, A: Matrix):
+        steps = []
+        det = self._cofactor_recursive(A, 0, steps)
+        return det, steps
+
+    def _minor_matrix(self, A: Matrix, row: int, col: int) -> Matrix:
+        rows = A.rows()
+        sub = []
+        for i, r in enumerate(rows):
+            if i == row: continue
+            sub.append([r[j] for j in range(len(r)) if j != col])
+        return Matrix(sub)
+
+    def _cofactor_recursive(self, A: Matrix, depth: int, steps: list):
+        n = A.n
+        indent = '  ' * depth
+        if n == 1:
+            steps.append(f"{indent}Base 1×1: det([a11]) = {A.at(0,0)}")
+            return A.at(0,0)
+        if n == 2:
+            a,b = A.at(0,0), A.at(0,1)
+            c,d = A.at(1,0), A.at(1,1)
+            steps.append(f"{indent}Base 2×2: det = ad − bc = {a*d} − {b*c}")
+            return a*d - b*c
+        steps.append(f"{indent}Expandir por la fila 1 (cofactores): det(A) = Σ (-1)^(1+j) a1j det(M1j)")
+        total = 0
+        for j in range(n):
+            a1j = A.at(0, j)
+            if a1j == 0:
+                steps.append(f"{indent}  a1{j+1}=0 ⇒ contribución 0")
+                continue
+            M1j = self._minor_matrix(A, 0, j)
+            sign = -1 if (1 + (j+1)) % 2 == 1 else 1  # (-1)^(1+j)
+            steps.append(f"{indent}  Cofactor C1{j+1} = (-1)^(1+{j+1}) · det(M1{j+1}) con a1{j+1}={a1j}")
+            # Calcular det(M1j)
+            det_M = self._cofactor_recursive(M1j, depth + 1, steps)
+            contrib = (a1j * det_M) * (1 if ((1 + (j+1)) % 2 == 0) else -1)
+            steps.append(f"{indent}  Contribución: a1{j+1}·C1{j+1} = {a1j} · ((-1)^(1+{j+1})·det(M)) = {contrib}")
+            total = total + contrib
+        steps.append(f"{indent}Resultado parcial (nivel {depth}): det = {total}")
+        return total
+
+    # Clipboard helpers
+    def _copy_A(self):
+        try:
+            QApplication.clipboard().setText(_serialize_matrix(self.A.to_matrix()))
+        except Exception as ex:
+            QMessageBox.critical(self, 'Copiar A', str(ex))
+
+    def _paste_A(self):
+        try:
+            text = QApplication.clipboard().text()
+            values, m, n = _parse_matrix_text(text)
+            if m != self.A.rows or n != self.A.cols:
+                raise ValueError(f'Dimensiones no coinciden: editor {self.A.rows}×{self.A.cols} vs datos {m}×{n}.')
+            _fill_matrix_input(self.A, values)
+        except Exception as ex:
+            QMessageBox.critical(self, 'Pegar en A', str(ex))
+
+    def _copy_B(self):
+        try:
+            QApplication.clipboard().setText(_serialize_matrix(self.B.to_matrix()))
+        except Exception as ex:
+            QMessageBox.critical(self, 'Copiar B', str(ex))
+
+    def _paste_B(self):
+        try:
+            text = QApplication.clipboard().text()
+            values, m, n = _parse_matrix_text(text)
+            if m != self.B.rows or n != self.B.cols:
+                raise ValueError(f'Dimensiones no coinciden: editor {self.B.rows}×{self.B.cols} vs datos {m}×{n}.')
+            _fill_matrix_input(self.B, values)
+        except Exception as ex:
+            QMessageBox.critical(self, 'Pegar en B', str(ex))

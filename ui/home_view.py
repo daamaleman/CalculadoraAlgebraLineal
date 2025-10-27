@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QWidget, QLabel, QTabWidget, QVBoxLayout, QTextEdit
-from .matrix_widgets import AugmentedSystemWidget, VectorPropertiesWidget, LinearCombinationWidget, MatrixEquationWidget, VectorArithmeticWidget, SystemsSolverWidget, LinearDependenceWidget, MatrixOpsWidget, MatrixInverseWidget
+from .matrix_widgets import AugmentedSystemWidget, VectorPropertiesWidget, LinearCombinationWidget, MatrixEquationWidget, VectorArithmeticWidget, SystemsSolverWidget, LinearDependenceWidget, MatrixOpsWidget, MatrixInverseWidget, DeterminantWidget
 
 class HomeView(QWidget):
     def __init__(self, parent=None):
@@ -44,6 +44,15 @@ class HomeView(QWidget):
                 <b>Vectores y ℝ<sup>n</sup>:</b>
                 suma, resta y escalar de vectores; combinación lineal y ecuación vectorial; propiedades en ℝ<sup>n</sup>; dependencia lineal.
             </li>
+            <li>
+                <b>Determinante de una matriz:</b> pestaña "Determinante de una Matriz" con métodos educativos y pasos:
+                <ul>
+                    <li><b>Cramer (2×2):</b> det(A) = ad − bc (ilustrativo para 2×2).</li>
+                    <li><b>Regla de Sarrus (3×3):</b> suma de diagonales principales menos secundarias.</li>
+                    <li><b>Expansión por cofactores (n×n):</b> desarrollo con signos y menores, para cualquier tamaño.</li>
+                </ul>
+                Se muestra det(A), interpretación de invertibilidad y verificación de propiedades (filas/columnas cero o proporcionales ⇒ det=0, cambio de signo por intercambio de filas, efecto de k en una fila, y det(AB)=det(A)·det(B)).
+            </li>
         </ul>
 
         <h2>Cómo usarla</h2>
@@ -54,6 +63,15 @@ class HomeView(QWidget):
         </ol>
 
         <p>Consejo: cuando compares propiedades (por ejemplo, traspuestas), la herramienta muestra ambos lados y si son iguales.</p>
+
+        <h2>Mini ayuda: determinante</h2>
+        <p>Para calcular y estudiar det(A), abre la pestaña <b>“Determinante de una Matriz”</b>:</p>
+        <ol>
+            <li>Elige el tamaño n y el método (Cramer 2×2, Sarrus 3×3 o Cofactores n×n).</li>
+            <li>Ingresa A (puedes <b>copiar/pegar</b> matrices entre pestañas).</li>
+            <li>Presiona <b>Calcular determinante</b> para ver los <i>pasos</i> y el <i>valor</i>.</li>
+        </ol>
+        <p>Además, la vista verifica propiedades teóricas y ofrece un bloque para comprobar <b>det(AB) = det(A)·det(B)</b> ingresando una matriz B.</p>
         ''')
         tabs.addTab(dashboard, 'Dashboard')
 
@@ -64,6 +82,7 @@ class HomeView(QWidget):
         tabs.addTab(VectorPropertiesWidget(), 'Propiedades de ℝⁿ')
         tabs.addTab(LinearCombinationWidget(), 'Combinación Lineal / Ecuación Vectorial')
         tabs.addTab(MatrixEquationWidget(), 'Ecuación Matricial (AX=B)')
+        tabs.addTab(DeterminantWidget(), 'Determinante de una Matriz')
         tabs.addTab(SystemsSolverWidget(), 'Sistemas AX=0 / AX=B (paso a paso)')
         tabs.addTab(LinearDependenceWidget(), 'Dependencia Lineal (R^n)')
         tabs.addTab(AugmentedSystemWidget(), 'Sistemas de ecuaciones (Gauss–Jordan)')
