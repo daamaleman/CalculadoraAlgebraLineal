@@ -1379,7 +1379,7 @@ class MatrixInverseWidget(QWidget):
         self.A = MatrixInput(n, n)
         # Reinsert A into the mat_box (which is layout index 1)
         mat_box = QVBoxLayout(); mat_box.addWidget(QLabel('Matriz A')); mat_box.addWidget(self.A)
-        # Replace layout at index 1
+        # Replace layout at index 1 
         root = self.layout()
         old = root.itemAt(1)
         # Remove the old layout widgets if present
