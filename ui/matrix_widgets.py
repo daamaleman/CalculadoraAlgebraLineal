@@ -1,13 +1,18 @@
 
 # ...existing code...
 
-from PySide6.QtWidgets import QWidget, QGridLayout, QLineEdit, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QMessageBox, QTextEdit, QSpinBox, QApplication, QComboBox
+from PySide6.QtWidgets import QWidget, QGridLayout, QLineEdit, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QMessageBox, QTextEdit, QSpinBox, QApplication, QComboBox, QScrollArea
 
 class VectorArithmeticWidget(QWidget):
     """Suma, resta y multiplicación de vectores"""
     def __init__(self, parent=None):
         super().__init__(parent)
-        v = QVBoxLayout(self)
+        # Hacer el contenido desplazable para evitar que se oculte y mejorar visibilidad
+        root_layout = QVBoxLayout(self)
+        self._scroll = QScrollArea(); self._scroll.setWidgetResizable(True)
+        self._content = QWidget(); v = QVBoxLayout(self._content)
+        self._scroll.setWidget(self._content)
+        root_layout.addWidget(self._scroll)
         size_line = QHBoxLayout()
         size_line.addWidget(QLabel('Dimensión n:'))
         self.n_spin = QSpinBox(); self.n_spin.setRange(2, 8); self.n_spin.setValue(3)
@@ -1572,6 +1577,34 @@ class MatrixInverseWidget(QWidget):
             'has_n_pivots': has_n_pivots,
         }
 
+class CollapsibleSection(QWidget):
+    """Pequeña sección colapsable con encabezado y contenido.
+    Uso: sec = CollapsibleSection('Título', expanded=True); sec.content_layout.addWidget(widget)
+    """
+    def __init__(self, title: str, expanded: bool = True, parent=None):
+        super().__init__(parent)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        self._title = title
+        self.header = QPushButton(('▼ ' if expanded else '▶ ') + title)
+        self.header.setCheckable(True)
+        self.header.setChecked(expanded)
+        self.header.setFlat(True)
+        self.header.setStyleSheet('text-align: left; font-weight: bold;')
+        lay.addWidget(self.header)
+        self.content = QWidget()
+        self.content_layout = QVBoxLayout(self.content)
+        self.content_layout.setContentsMargins(12, 4, 4, 8)
+        lay.addWidget(self.content)
+        self.content.setVisible(expanded)
+        self.header.clicked.connect(self._on_toggle)
+
+    def _on_toggle(self):
+        expanded = self.header.isChecked()
+        self.content.setVisible(expanded)
+        # actualizar flecha
+        self.header.setText(('▼ ' if expanded else '▶ ') + self._title)
+
 
 class DeterminantWidget(QWidget):
     """Calcular y explicar el determinante de A con distintos métodos y verificar propiedades."""
@@ -1586,19 +1619,33 @@ class DeterminantWidget(QWidget):
         top.addSpacing(10)
         top.addWidget(QLabel('Método:'))
         self.method = QComboBox(); self.method.addItems([
-            'Cramer (2×2)',
+            'Fórmula (2×2)',
             'Regla de Sarrus (3×3)',
-            'Expansión por Cofactores (n×n)'
+            'Expansión por Cofactores (n×n)',
+            'Regla de Cramer (Ax=b)'
         ])
         self.method.setCurrentIndex(2)
         top.addWidget(self.method)
         top.addStretch()
         v.addLayout(top)
 
-        # Matriz A
+        # Matrices superiores (A y, para Cramer, el vector b) lado a lado
         self.A = MatrixInput(self.n_spin.value(), self.n_spin.value())
-        mat_box = QVBoxLayout(); mat_box.addWidget(QLabel('Matriz A')); mat_box.addWidget(self.A)
-        v.addLayout(mat_box)
+        self.mat_box = QVBoxLayout(); self.mat_box.addWidget(QLabel('Matriz A')); self.mat_box.addWidget(self.A)
+        # Vector b (para Regla de Cramer)
+        self.b_box = QVBoxLayout()
+        self.lbl_b = QLabel('Vector b (n×1)')
+        self.b_vec = MatrixInput(self.n_spin.value(), 1)
+        self.b_box.addWidget(self.lbl_b)
+        self.b_box.addWidget(self.b_vec)
+        # Fila superior con A y b
+        self.top_mats = QHBoxLayout()
+        self.top_mats.addLayout(self.mat_box)
+        self.top_mats.addSpacing(12)
+        self.top_mats.addLayout(self.b_box)
+        v.addLayout(self.top_mats)
+        # Ocultar b por defecto (solo visible para método de Cramer)
+        self.lbl_b.hide(); self.b_vec.hide()
 
         # Portapapeles A
         clip = QHBoxLayout()
@@ -1614,15 +1661,19 @@ class DeterminantWidget(QWidget):
         actions.addStretch()
         v.addLayout(actions)
 
-        # Salida de pasos
-        self.steps = QTextEdit(); self.steps.setReadOnly(True); self.steps.setFont(QFont('Consolas', 11))
-        v.addWidget(QLabel('Pasos del método seleccionado:'))
-        v.addWidget(self.steps)
+    # (El vector b ya está al lado de A en la parte superior)
 
-        # Resultado e interpretación
+        # Salida de pasos (colapsable)
+        self.steps = QTextEdit(); self.steps.setReadOnly(True); self.steps.setFont(QFont('Consolas', 11))
+        self.steps_section = CollapsibleSection('Pasos del método seleccionado', expanded=False)
+        self.steps_section.content_layout.addWidget(self.steps)
+        v.addWidget(self.steps_section)
+
+        # Resultado + interpretación + propiedades (colapsable)
         self.result = QTextEdit(); self.result.setReadOnly(True); self.result.setFont(QFont('Consolas', 11))
-        v.addWidget(QLabel('Resultado e interpretación (invertibilidad):'))
-        v.addWidget(self.result)
+        self.result_section = CollapsibleSection('Resultado, interpretación y propiedades verificadas con A', expanded=True)
+        self.result_section.content_layout.addWidget(self.result)
+        v.addWidget(self.result_section)
 
         # Propiedades del determinante
         prop_top = QHBoxLayout()
@@ -1634,22 +1685,31 @@ class DeterminantWidget(QWidget):
         self.btn_props = QPushButton('Verificar propiedades con A')
         prop_btns.addWidget(self.btn_props); prop_btns.addStretch()
         v.addLayout(prop_btns)
+        # Área antigua de propiedades se mantiene oculta para no duplicar ventanas
         self.props = QTextEdit(); self.props.setReadOnly(True); self.props.setFont(QFont('Consolas', 11))
+        self.props.hide()
         v.addWidget(self.props)
 
-        # Propiedad multiplicativa con B
-        v.addWidget(QLabel('Propiedad 5: det(AB) = det(A)·det(B)'))
+        # Propiedad multiplicativa con B (colapsable)
         self.B = MatrixInput(self.n_spin.value(), self.n_spin.value())
-        b_box = QVBoxLayout(); b_box.addWidget(QLabel('Matriz B (n×n)')); b_box.addWidget(self.B)
-        v.addLayout(b_box)
-        clipB = QHBoxLayout();
+        self.B_box = QVBoxLayout(); self.B_box.addWidget(QLabel('Matriz B (n×n)')); self.B_box.addWidget(self.B)
+        clipB = QHBoxLayout()
         self.btn_copy_B = QPushButton('Copiar B'); self.btn_paste_B = QPushButton('Pegar en B')
-        clipB.addWidget(self.btn_copy_B); clipB.addWidget(self.btn_paste_B); clipB.addStretch(); v.addLayout(clipB)
-        mul_btns = QHBoxLayout(); self.btn_mul_prop = QPushButton('Verificar det(AB) = det(A)·det(B)'); mul_btns.addWidget(self.btn_mul_prop); mul_btns.addStretch(); v.addLayout(mul_btns)
-        self.mul_prop_out = QTextEdit(); self.mul_prop_out.setReadOnly(True); self.mul_prop_out.setFont(QFont('Consolas', 11)); v.addWidget(self.mul_prop_out)
+        clipB.addWidget(self.btn_copy_B); clipB.addWidget(self.btn_paste_B); clipB.addStretch()
+        mul_btns = QHBoxLayout()
+        self.btn_mul_prop = QPushButton('Verificar det(AB) = det(A)·det(B)')
+        mul_btns.addWidget(self.btn_mul_prop); mul_btns.addStretch()
+        self.mul_prop_out = QTextEdit(); self.mul_prop_out.setReadOnly(True); self.mul_prop_out.setFont(QFont('Consolas', 11))
+        self.mul_section = CollapsibleSection('Propiedad 5: det(AB) = det(A)·det(B)', expanded=False)
+        self.mul_section.content_layout.addLayout(self.B_box)
+        self.mul_section.content_layout.addLayout(clipB)
+        self.mul_section.content_layout.addLayout(mul_btns)
+        self.mul_section.content_layout.addWidget(self.mul_prop_out)
+        v.addWidget(self.mul_section)
 
         # Conexiones
         self.n_spin.valueChanged.connect(self._on_resize)
+        self.method.currentTextChanged.connect(self._toggle_b_visibility)
         self.btn_calc.clicked.connect(self._calc_det)
         self.btn_props.clicked.connect(self._check_properties)
         self.btn_copy_A.clicked.connect(self._copy_A)
@@ -1660,24 +1720,51 @@ class DeterminantWidget(QWidget):
 
     def _on_resize(self):
         n = self.n_spin.value()
-        self.A.setParent(None); self.B.setParent(None)
-        self.A = MatrixInput(n, n); self.B = MatrixInput(n, n)
-        # Replace in layouts: A at layout index 1, B later
-        root = self.layout()
-        # Replace A
-        mat_box = QVBoxLayout(); mat_box.addWidget(QLabel('Matriz A')); mat_box.addWidget(self.A)
-        old = root.itemAt(1)
-        if old is not None:
-            lay = old.layout()
-            if lay is not None:
-                while lay.count():
-                    it = lay.takeAt(0); w = it.widget();
-                    if w: w.setParent(None)
-                root.removeItem(old)
-        root.insertLayout(1, mat_box)
-        # Replace B: find label 'Matriz B (n×n)' area; here it is after props; simplest approach: append fresh
-        # Remove previous B container by clearing widgets from its place (search roughly)
-        # For simplicity, do nothing and keep UI consistent on first construction only.
+        # Rebuild A in its container
+        try:
+            self.A.setParent(None)
+        except Exception:
+            pass
+        self.A = MatrixInput(n, n)
+        while self.mat_box.count():
+            it = self.mat_box.takeAt(0)
+            w = it.widget()
+            if w:
+                w.setParent(None)
+        self.mat_box.addWidget(QLabel('Matriz A'))
+        self.mat_box.addWidget(self.A)
+        # Rebuild b container (for Cramer)
+        while self.b_box.count():
+            it = self.b_box.takeAt(0)
+            w = it.widget()
+            if w:
+                w.setParent(None)
+        self.lbl_b = QLabel('Vector b (n×1)')
+        self.b_vec = MatrixInput(n, 1)
+        self.b_box.addWidget(self.lbl_b)
+        self.b_box.addWidget(self.b_vec)
+        # Respect current visibility based on method
+        self._toggle_b_visibility()
+        # Rebuild B in its container
+        try:
+            self.B.setParent(None)
+        except Exception:
+            pass
+        self.B = MatrixInput(n, n)
+        while self.B_box.count():
+            it = self.B_box.takeAt(0)
+            w = it.widget()
+            if w:
+                w.setParent(None)
+        self.B_box.addWidget(QLabel('Matriz B (n×n)'))
+        self.B_box.addWidget(self.B)
+
+    def _toggle_b_visibility(self):
+        show = self.method.currentText().startswith('Regla de Cramer')
+        if show:
+            self.lbl_b.show(); self.b_vec.show()
+        else:
+            self.lbl_b.hide(); self.b_vec.hide()
 
     def _calc_det(self):
         try:
@@ -1685,21 +1772,36 @@ class DeterminantWidget(QWidget):
             n = A.n
             method = self.method.currentText()
             steps = []
-            if method.startswith('Cramer'):
+            if method.startswith('Fórmula'):
                 if n != 2:
-                    raise ValueError('El método de Cramer aquí se ilustra sólo para matrices 2×2.')
+                    raise ValueError('La fórmula ad−bc aquí se ilustra sólo para matrices 2×2.')
                 det, steps = self._det_cramer_2x2(A)
             elif method.startswith('Regla de Sarrus'):
                 if n != 3:
                     raise ValueError('La regla de Sarrus sólo aplica para matrices 3×3.')
                 det, steps = self._det_sarrus_3x3(A)
+            elif method.startswith('Regla de Cramer'):
+                # Resolver Ax=b por Regla de Cramer
+                b = self.b_vec.to_matrix()
+                if b.m != n or b.n != 1:
+                    raise ValueError(f'El vector b debe ser de tamaño {n}×1 para Ax=b.')
+                sol, steps = self._cramer_rule_system(A, b)
+                self.steps.setPlainText('\n'.join(steps))
+                from core.formatter import frac_to_str
+                if sol is None:
+                    self.result.setPlainText('Regla de Cramer: det(A)=0 ⇒ no aplica (no hay solución única).')
+                else:
+                    xs = ', '.join([f"x{i+1} = {frac_to_str(sol[i])}" for i in range(len(sol))])
+                    msg = ["=== Regla de Cramer (Ax=b) ===", xs, 'Interpretación: det(A) ≠ 0 ⇒ solución única.']
+                    self.result.setPlainText('\n'.join(msg))
+                return
             else:
                 det, steps = self._det_cofactores(A)
             self.steps.setPlainText('\n'.join(steps))
-            from core.formatter import frac_to_str
-            msg = [f"det(A) = {frac_to_str(det)}"]
-            msg.append('Interpretación: ' + ("El determinante es distinto de cero, por lo tanto A es invertible." if det != 0 else "El determinante es cero, la matriz no tiene inversa."))
-            self.result.setPlainText('\n'.join(msg))
+            # Construir salida combinada (resultado + interpretación + propiedades en A)
+            detA = det
+            text = self._compose_result_and_properties(A, detA)
+            self.result.setPlainText(text)
         except Exception as ex:
             QMessageBox.critical(self, 'Determinante', str(ex))
 
@@ -1707,59 +1809,84 @@ class DeterminantWidget(QWidget):
         try:
             A = self.A.to_matrix(); n = A.n
             detA, _ = self._det_cofactores(A)
-            lines = []
-            # Propiedad 1: fila o columna cero -> det=0
-            row_zero = any(all(A.at(i, j) == 0 for j in range(n)) for i in range(n))
-            col_zero = any(all(A.at(i, j) == 0 for i in range(n)) for j in range(n))
-            if row_zero or col_zero:
-                lines.append('Propiedad 1: ✔️ A tiene una fila/columna cero ⇒ det(A)=0. Valor: 0')
-            else:
-                lines.append(f'Propiedad 1: (ejemplo) Si A tuviera una fila/columna cero ⇒ det(A)=0. En A actual: det(A) = {detA}')
-            # Propiedad 2: filas/columnas proporcionales -> det=0
-            def proportional(v1, v2):
-                k = None
-                for a, b in zip(v1, v2):
-                    if b == 0:
-                        if a != 0:
-                            return False
-                        else:
-                            continue
-                    r = a / b
-                    if k is None:
-                        k = r
-                    elif r != k:
-                        return False
-                return k is not None
-            prop = False
-            for i in range(n):
-                for j in range(i+1, n):
-                    if proportional([A.at(i, c) for c in range(n)], [A.at(j, c) for c in range(n)]):
-                        prop = True
-            if prop:
-                lines.append('Propiedad 2: ✔️ Dos filas (o columnas) son proporcionales ⇒ det(A)=0.')
-            else:
-                lines.append('Propiedad 2: (ejemplo) Si dos filas/columnas fuesen proporcionales ⇒ det(A)=0.')
-            # Propiedad 3: intercambio de filas cambia signo
-            if n >= 2:
-                Aswap_rows = Matrix([A.rows()[1], A.rows()[0]] + A.rows()[2:])
-                det_swap, _ = self._det_cofactores(Aswap_rows)
-                lines.append(f'Propiedad 3: Al intercambiar dos filas, det cambia de signo: det(A_sw) = {det_swap} vs -det(A) = {-detA}. ' + ('✔️' if det_swap == -detA else '❌'))
-            # Propiedad 4: multiplicar una fila por k
-            try:
-                k = parse_number(self.k_edit.text().strip() or '2')
-            except Exception:
-                k = 2
-            if n >= 1:
-                rows = A.rows(); rows2 = [list(r) for r in rows];
-                rows2[0] = [k * x for x in rows2[0]]
-                Ak = Matrix(rows2)
-                det_Ak, _ = self._det_cofactores(Ak)
-                lines.append(f'Propiedad 4: Multiplicar una fila por k ⇒ det(k·A_row) = k·det(A): det(A_k) = {det_Ak} vs k·det(A) = {k*detA}. ' + ('✔️' if det_Ak == k*detA else '❌'))
-            # Propiedad 5: det(AB) = det(A)·det(B) (usará B actual y salida aparte, pero mencionamos aquí)
-            lines.append('Propiedad 5: Use el bloque inferior para verificar det(AB) = det(A)·det(B) con su B.')
-            self.props.setPlainText('\n'.join(lines))
+            # Reutilizar la misma ventana combinada
+            text = self._compose_result_and_properties(A, detA)
+            self.result.setPlainText(text)
         except Exception as ex:
             QMessageBox.critical(self, 'Propiedades del determinante', str(ex))
+
+    def _compose_result_and_properties(self, A: 'Matrix', detA):
+        """Construye un texto combinado con det(A), interpretación y verificación de propiedades para A.
+        Muestra la Propiedad 3 con un ejemplo explícito usando la matriz ingresada.
+        """
+        from core.formatter import frac_to_str
+        out = []
+        # Resultado e interpretación
+        out.append('=== Determinante e interpretación ===')
+        out.append(f"det(A) = {frac_to_str(detA)}")
+        out.append('Interpretación: ' + ("El determinante es distinto de cero ⇒ A es invertible." if detA != 0 else "El determinante es cero ⇒ A no es invertible."))
+        out.append('')
+        # Propiedades verificadas en A
+        out.append('=== Verificación de propiedades en A ===')
+        n = A.n
+        # Propiedad 1
+        row_zero = any(all(A.at(i, j) == 0 for j in range(n)) for i in range(n))
+        col_zero = any(all(A.at(i, j) == 0 for i in range(n)) for j in range(n))
+        if row_zero or col_zero:
+            out.append('Propiedad 1: ✔️ A tiene una fila/columna cero ⇒ det(A)=0. Valor: 0')
+        else:
+            out.append(f'Propiedad 1: (ejemplo) Si A tuviera una fila/columna cero ⇒ det(A)=0. En A actual: det(A) = {frac_to_str(detA)}')
+        # Propiedad 2
+        def proportional(v1, v2):
+            k = None
+            for a, b in zip(v1, v2):
+                if b == 0:
+                    if a != 0:
+                        return False
+                    else:
+                        continue
+                r = a / b
+                if k is None:
+                    k = r
+                elif r != k:
+                    return False
+            return k is not None
+        prop = False
+        for i in range(n):
+            for j in range(i+1, n):
+                if proportional([A.at(i, c) for c in range(n)], [A.at(j, c) for c in range(n)]):
+                    prop = True
+        if prop:
+            out.append('Propiedad 2: ✔️ Dos filas (o columnas) son proporcionales ⇒ det(A)=0.')
+        else:
+            out.append('Propiedad 2: (ejemplo) Si dos filas/columnas fuesen proporcionales ⇒ det(A)=0.')
+        # Propiedad 3 con ejemplo explícito
+        if n >= 2:
+            rows = A.rows()
+            Aswap_rows = Matrix([rows[1], rows[0]] + rows[2:])
+            det_swap, _ = self._det_cofactores(Aswap_rows)
+            out.append('Propiedad 3: Intercambiar dos filas cambia el signo del determinante:')
+            out.append('A =')
+            out.extend(pretty_matrix(A))
+            out.append('A_sw (filas 1↔2) =')
+            out.extend(pretty_matrix(Aswap_rows))
+            ok = (det_swap == -detA)
+            out.append(f"det(A_sw) = {frac_to_str(det_swap)}; -det(A) = {frac_to_str(-detA)}  " + ('✔️ coincide' if ok else '❌ no coincide'))
+        # Propiedad 4 (con k de la UI)
+        try:
+            k = parse_number(self.k_edit.text().strip() or '2')
+        except Exception:
+            k = 2
+        if n >= 1:
+            rows = A.rows(); rows2 = [list(r) for r in rows]
+            rows2[0] = [k * x for x in rows2[0]]
+            Ak = Matrix(rows2)
+            det_Ak, _ = self._det_cofactores(Ak)
+            ok4 = (det_Ak == k*detA)
+            out.append(f"Propiedad 4: Multiplicar una fila por k ⇒ det cambia por factor k: det(A_k) = {frac_to_str(det_Ak)}; k·det(A) = {frac_to_str(k*detA)}  " + ('✔️' if ok4 else '❌'))
+        # Propiedad 5 recordatorio
+        out.append('Propiedad 5: Use el bloque inferior para verificar det(AB) = det(A)·det(B) con su B.')
+        return '\n'.join(out)
 
     def _check_mul_property(self):
         try:
@@ -1784,12 +1911,41 @@ class DeterminantWidget(QWidget):
         a, b = A.at(0, 0), A.at(0, 1)
         c, d = A.at(1, 0), A.at(1, 1)
         steps = []
-        steps.append('Método de Cramer (2×2): det(A) = ad − bc')
+        steps.append('Fórmula (2×2): det(A) = ad − bc')
         steps.append(f"a={a}, b={b}, c={c}, d={d}")
         steps.append(f"ad = {a*d}; bc = {b*c}")
         det = a*d - b*c
         steps.append(f"det(A) = {det}")
         return det, steps
+
+    def _cramer_rule_system(self, A: Matrix, b: Matrix):
+        """Aplica la Regla de Cramer a Ax=b. Devuelve (solucion_list | None, steps)."""
+        steps = []
+        n = A.n
+        detA, steps_det = self._det_cofactores(A)
+        steps.append('Paso 1: Calcular det(A)')
+        steps.extend(steps_det)
+        if detA == 0:
+            steps.append('det(A) = 0 ⇒ Cramer no aplica (no hay solución única).')
+            return None, steps
+        from core.formatter import frac_to_str
+        steps.append(f"det(A) = {frac_to_str(detA)} ≠ 0 ⇒ Cramer aplica.")
+        sol = []
+        for i in range(n):
+            # Construir A_i reemplazando la columna i con b
+            rows = [list(r) for r in A.rows()]
+            for r in range(n):
+                rows[r][i] = b.at(r, 0)
+            Ai = Matrix(rows)
+            detAi, steps_Ai = self._det_cofactores(Ai)
+            steps.append(f"\nPaso 2.{i+1}: Construir A_{i+1} reemplazando la columna {i+1} con b y calcular det(A_{i+1})")
+            steps.append('A_{i+1} =')
+            steps.extend(pretty_matrix(Ai))
+            steps.extend(steps_Ai)
+            xi = detAi / detA
+            sol.append(xi)
+            steps.append(f"x_{i+1} = det(A_{i+1})/det(A) = {frac_to_str(detAi)} / {frac_to_str(detA)} = {frac_to_str(xi)}")
+        return sol, steps
 
     def _det_sarrus_3x3(self, A: Matrix):
         rows = A.rows()
