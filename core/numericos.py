@@ -1,9 +1,11 @@
-"""Métodos numéricos: Bisección y Regla Falsa.
+"""Métodos numéricos: Bisección, Regla Falsa, Newton–Raphson y Secante.
 
 Incluye:
 - `parse_function(expr: str) -> callable` para evaluar f(x) de forma segura usando `math`.
 - `biseccion(f, a, b, tol, max_iter=100)` ejecuta el método de bisección.
 - `regla_falsa(f, a, b, tol, max_iter=100)` ejecuta el método de falsa posición.
+- `newton_raphson(f, df, x0, tol, max_iter=100)` ejecuta Newton–Raphson.
+- `metodo_secante(f, x0, x1, tol, max_iter=100)` ejecuta el método de la secante.
 
 Cada método devuelve un diccionario con:
 - root: raíz aproximada
@@ -195,20 +197,186 @@ def format_iterations_table(result: Dict[str, Any], method_name: str) -> str:
     lines.append("+-----+-----------+-----------+-----------+-----------+-----------+-----------+----------------+")
     for row in result['iterations']:
         it = row['iter']
-        a = row['a']; b = row['b']; x = row['x']; fx = row['fx']
+        a = row.get('a'); b = row.get('b'); x = row['x']; fx = row['fx']
         ea = row['error_abs']; er = row['error_rel_percent']
-        interval = row['interval']
+        interval = row.get('interval')
         fmt = lambda v: ("" if v is None else f"{v:.6g}")
-        lines.append(f"| {it:<3d} | {a:>9.6g} | {b:>9.6g} | {x:>9.6g} | {fx:>9.6g} | {fmt(ea):>9} | {fmt(er):>9} | ({interval[0]:.6g},{interval[1]:.6g}) |")
+        # Columnas a/b e intervalo pueden no aplicar (Newton/Secante)
+        a_txt = ("" if a is None else f"{a:>9.6g}")
+        b_txt = ("" if b is None else f"{b:>9.6g}")
+        interval_txt = "" if interval is None else f"({interval[0]:.6g},{interval[1]:.6g})"
+        lines.append(f"| {it:<3d} | {a_txt:>9} | {b_txt:>9} | {x:>9.6g} | {fx:>9.6g} | {fmt(ea):>9} | {fmt(er):>9} | {interval_txt:<14} |")
     lines.append("+-----+-----------+-----------+-----------+-----------+-----------+-----------+----------------+")
     root = result['root']
     ferr_abs = result['final_error_abs']
     ferr_pct = result['final_error_percent']
-    interval = result['interval']
+    interval = result.get('interval')
     lines.append(f"Raíz aproximada: {root:.10g}")
     lines.append(f"Iteraciones totales: {len(result['iterations'])}")
     lines.append(f"Error final abs: {'' if ferr_abs is None else f'{ferr_abs:.6g}'}")
     lines.append(f"Error final %: {'' if ferr_pct is None else f'{ferr_pct:.6g}'}")
-    lines.append(f"Intervalo final: ({interval[0]:.6g}, {interval[1]:.6g})")
+    if interval is not None:
+        lines.append(f"Intervalo final: ({interval[0]:.6g}, {interval[1]:.6g})")
     lines.append(f"Estado: {'Convergió' if result['converged'] else 'Sin converger'} — {result['message']}")
     return "\n".join(lines)
+
+
+def newton_raphson(
+    f: Callable[[float], float],
+    df: Callable[[float], float] | None,
+    x0: float,
+    tol: float,
+    max_iter: int = 100,
+) -> Dict[str, Any]:
+    """Newton–Raphson con manejo de errores claros.
+
+    - Si `df` es None, intenta derivada numérica con diferencia central.
+    - Reporta división por cero si f'(x_k) == 0.
+    - Reporta posible divergencia si no converge en `max_iter`.
+    - Tabla con columnas (iter, x, f(x), err_abs, err_rel%).
+    """
+
+    def derivada(x: float) -> float:
+        if df is not None:
+            return df(x)
+        # Derivada numérica (diferencia central)
+        h = 1e-6
+        return (f(x + h) - f(x - h)) / (2 * h)
+
+    iterations = []
+    converged = False
+    message = 'OK'
+    prev_x = x0
+
+    for k in range(1, max_iter + 1):
+        fx = f(prev_x)
+        dfx = derivada(prev_x)
+        if dfx == 0:
+            message = 'División por cero: f\'(x_k)=0'
+            break
+
+        x = prev_x - fx / dfx
+
+        # Errores
+        err_abs = None if k == 1 else abs(x - prev_x)
+        err_rel_pct = None if (x == 0 or err_abs is None) else (err_abs / abs(x)) * 100.0
+
+        iterations.append({
+            'iter': k,
+            'a': None,
+            'b': None,
+            'x': x,
+            'fx': f(x),
+            'error_abs': err_abs,
+            'error_rel_percent': err_rel_pct,
+            'interval': None,
+        })
+
+        if err_abs is not None and err_abs < tol:
+            converged = True
+            message = 'Convergió por tolerancia'
+            prev_x = x
+            break
+
+        prev_x = x
+
+    # Resultado
+    root = prev_x
+    final_err_abs = None
+    final_err_pct = None
+    if len(iterations) >= 2:
+        x_now = iterations[-1]['x']
+        x_prev = iterations[-2]['x']
+        final_err_abs = abs(x_now - x_prev)
+        final_err_pct = None if x_now == 0 else (final_err_abs / abs(x_now)) * 100.0
+    if not converged and message == 'OK':
+        message = 'Posible divergencia o max_iter alcanzado'
+
+    return {
+        'root': root,
+        'iterations': iterations,
+        'final_error_abs': final_err_abs,
+        'final_error_percent': final_err_pct,
+        'interval': None,
+        'converged': converged,
+        'message': message,
+    }
+
+
+def metodo_secante(
+    f: Callable[[float], float],
+    x0: float,
+    x1: float,
+    tol: float,
+    max_iter: int = 100,
+) -> Dict[str, Any]:
+    """Método de la Secante.
+
+    x_{k+1} = x_k - f(x_k) * (x_{k-1} - x_k) / (f(x_{k-1}) - f(x_k))
+
+    Maneja división por cero cuando f(x_{k-1}) == f(x_k),
+    y reporta posible divergencia si no alcanza la tolerancia.
+    """
+
+    iterations = []
+    converged = False
+    message = 'OK'
+    prev_prev_x = x0
+    prev_x = x1
+
+    fx_prev_prev = f(prev_prev_x)
+    fx_prev = f(prev_x)
+
+    for k in range(1, max_iter + 1):
+        denom = (fx_prev_prev - fx_prev)
+        if denom == 0:
+            message = 'División por cero: f(x_{k-1}) = f(x_k)'
+            break
+
+        x = prev_x - fx_prev * (prev_prev_x - prev_x) / denom
+        fx = f(x)
+
+        err_abs = abs(x - prev_x)
+        err_rel_pct = None if x == 0 else (err_abs / abs(x)) * 100.0
+
+        iterations.append({
+            'iter': k,
+            'a': None,
+            'b': None,
+            'x': x,
+            'fx': fx,
+            'error_abs': err_abs,
+            'error_rel_percent': err_rel_pct,
+            'interval': None,
+        })
+
+        if err_abs < tol:
+            converged = True
+            message = 'Convergió por tolerancia'
+            prev_x = x
+            break
+
+        # Avanzar
+        prev_prev_x, fx_prev_prev = prev_x, fx_prev
+        prev_x, fx_prev = x, fx
+
+    root = prev_x
+    final_err_abs = None
+    final_err_pct = None
+    if len(iterations) >= 2:
+        x_now = iterations[-1]['x']
+        x_prev = iterations[-2]['x']
+        final_err_abs = abs(x_now - x_prev)
+        final_err_pct = None if x_now == 0 else (final_err_abs / abs(x_now)) * 100.0
+    if not converged and message == 'OK':
+        message = 'Posible divergencia o max_iter alcanzado'
+
+    return {
+        'root': root,
+        'iterations': iterations,
+        'final_error_abs': final_err_abs,
+        'final_error_percent': final_err_pct,
+        'interval': None,
+        'converged': converged,
+        'message': message,
+    }
