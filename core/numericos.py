@@ -25,6 +25,29 @@ from math import *
 from typing import Callable, Dict, Any
 
 
+def _normalize_superscripts(expr: str) -> str:
+    """Convierte secuencias en superíndice a formato '^digits'. Ej: 'x³' -> 'x^3'."""
+    sup_map = {
+        '⁰': '0','¹': '1','²': '2','³': '3','⁴': '4','⁵': '5','⁶': '6','⁷': '7','⁸': '8','⁹': '9',
+        '⁻': '-','⁺': '+','⁽': '(', '⁾': ')'
+    }
+    out = []
+    i = 0
+    while i < len(expr):
+        ch = expr[i]
+        if ch in sup_map:
+            # Agrupar una corrida de superíndices
+            buf = []
+            while i < len(expr) and expr[i] in sup_map:
+                buf.append(sup_map[expr[i]])
+                i += 1
+            out.append('^' + ''.join(buf))
+            continue
+        out.append(ch)
+        i += 1
+    return ''.join(out)
+
+
 def parse_function(expr: str) -> Callable[[float], float]:
     """Construye una función f(x) a partir de una cadena `expr`.
 
@@ -34,6 +57,7 @@ def parse_function(expr: str) -> Callable[[float], float]:
     - Evalúa con entorno seguro (sin builtins).
     """
     expr = expr.strip()
+    expr = _normalize_superscripts(expr)
     expr = expr.replace('^', '**')
     # Entorno seguro solo con símbolos de math y constantes útiles
     safe_env: Dict[str, Any] = {name: globals()[name] for name in (
@@ -47,6 +71,23 @@ def parse_function(expr: str) -> Callable[[float], float]:
         return eval(expr, {"__builtins__": {}}, {**safe_env, 'x': x})
 
     return f
+
+
+def parse_number_expr(expr: str) -> float:
+    """Evalúa una expresión numérica segura con soporte de potencia `^`.
+
+    Ejemplos válidos: "2^3", "(1+2)*3", "pi/4", "sqrt(2)", "1e-3".
+    """
+    s = _normalize_superscripts(expr.strip()).replace('^', '**')
+    safe_env: Dict[str, Any] = {name: globals()[name] for name in (
+        'sin','cos','tan','asin','acos','atan','exp','log','log10','sqrt','fabs','floor','ceil','pow','pi','e'
+    )}
+    safe_env['abs'] = abs
+    safe_env['pow'] = pow
+    val = eval(s, {"__builtins__": {}}, safe_env)
+    if isinstance(val, (int, float)):
+        return float(val)
+    raise ValueError('La expresión numérica no es válida.')
 
 
 def _sign(x: float) -> int:

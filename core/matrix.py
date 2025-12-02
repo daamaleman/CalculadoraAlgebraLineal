@@ -5,27 +5,74 @@ from typing import List, Tuple, Optional
 Number = Fraction
 
 def parse_number(token: str) -> Number:
-    """Parse user input like '3', '-1.5', '2/3' into exact Fraction."""
+    """Parse user input like '3', '-1.5', '2/3', '2^3' or '2³' into exact Fraction.
+
+    Admite potencias con exponente entero. Para decimales/fracciones, se eleva exacto
+    cuando el exponente es entero (p. ej., (1/2)^3 = 1/8).
+    """
     token = token.strip().replace(',', '.')  # allow comma decimals
-    if '/' in token:
-        parts = token.split('/')
-        if len(parts) != 2:
-            raise ValueError(f"Fracción inválida: '{token}'. Usa el formato a/b, con a y b números.")
-        num, den = parts
+
+    def _normalize_superscripts(s: str) -> str:
+        sup_map = {
+            '⁰': '0','¹': '1','²': '2','³': '3','⁴': '4','⁵': '5','⁶': '6','⁷': '7','⁸': '8','⁹': '9',
+            '⁻': '-','⁺': '+','⁽': '(', '⁾': ')'
+        }
+        out = []
+        i = 0
+        while i < len(s):
+            ch = s[i]
+            if ch in sup_map:
+                buf = []
+                while i < len(s) and s[i] in sup_map:
+                    buf.append(sup_map[s[i]])
+                    i += 1
+                out.append('^' + ''.join(buf))
+                continue
+            out.append(ch)
+            i += 1
+        return ''.join(out)
+
+    def _parse_simple(s: str) -> Number:
+        if '/' in s:
+            parts = s.split('/')
+            if len(parts) != 2:
+                raise ValueError(f"Fracción inválida: '{s}'. Usa el formato a/b, con a y b números.")
+            num, den = parts
+            try:
+                num_f = Fraction(num)
+                den_f = Fraction(den)
+                if den_f == 0:
+                    raise ValueError('El denominador no puede ser cero')
+                return num_f / den_f
+            except Exception:
+                raise ValueError(f"Fracción inválida: '{s}'. Usa el formato a/b, con a y b números.")
+        if s == '' or s == '+':
+            raise ValueError('Número vacío')
         try:
-            num_f = Fraction(num)
-            den_f = Fraction(den)
-            if den_f == 0:
-                raise ValueError('El denominador no puede ser cero')
-            return num_f / den_f
+            return Fraction(s)
         except Exception:
-            raise ValueError(f"Fracción inválida: '{token}'. Usa el formato a/b, con a y b números.")
-    if token == '' or token == '+':
-        raise ValueError('Número vacío')
-    try:
-        return Fraction(token)
-    except Exception:
-        raise ValueError(f"Número inválido: '{token}'")
+            raise ValueError(f"Número inválido: '{s}'")
+
+    token = _normalize_superscripts(token)
+    if '^' in token:
+        base_str, exp_str = token.split('^', 1)
+        base_str = base_str.strip()
+        if base_str.startswith('(') and base_str.endswith(')'):
+            base_str = base_str[1:-1].strip()
+        try:
+            exp_int = int(exp_str.strip())
+        except Exception:
+            raise ValueError(f"Exponente inválido: '{exp_str}'. Debe ser entero.")
+        base = _parse_simple(base_str)
+        # Potencia exacta con Fraction y exponente entero
+        if exp_int >= 0:
+            return base ** exp_int
+        # exponente negativo
+        if base == 0:
+            raise ValueError('0 no puede elevarse a exponente negativo')
+        return Fraction(1, 1) / (base ** abs(exp_int))
+
+    return _parse_simple(token)
 
 class Matrix:
     """Simple immutable Matrix wrapper using Fraction arithmetic."""

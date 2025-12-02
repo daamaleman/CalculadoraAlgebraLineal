@@ -1,9 +1,9 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextEdit, QGroupBox
 )
-from PySide6.QtGui import QFont, QDoubleValidator
+from PySide6.QtGui import QFont
 
-from core.numericos import parse_function, biseccion, regla_falsa, newton_raphson, metodo_secante, format_iterations_table
+from core.numericos import parse_function, parse_number_expr, biseccion, regla_falsa, newton_raphson, metodo_secante, format_iterations_table
 
 
 class NumericalMethodsWidget(QWidget):
@@ -30,11 +30,8 @@ class NumericalMethodsWidget(QWidget):
         self.x1_edit = QLineEdit(); self.x1_edit.setPlaceholderText('x1 (Secante)');
         self.tol_edit = QLineEdit(); self.tol_edit.setPlaceholderText('tolerancia (ej: 1e-4)');
         self.max_iter_edit = QLineEdit(); self.max_iter_edit.setPlaceholderText('max_iter (ej: 100)');
-        # Validadores
-        dv = QDoubleValidator(); dv.setNotation(QDoubleValidator.StandardNotation)
-        self.a_edit.setValidator(dv); self.b_edit.setValidator(dv); self.tol_edit.setValidator(dv)
-        self.x0_edit.setValidator(dv); self.x1_edit.setValidator(dv)
-        # max_iter como entero simple via texto, se valida al leer
+        # Sin validadores estrictos para permitir exponentes (ej: 2^3).
+        # Se validará al leer usando parse_number_expr.
 
         h.addWidget(QLabel('f(x):'))
         h.addWidget(self.f_edit, stretch=2)
@@ -83,10 +80,12 @@ class NumericalMethodsWidget(QWidget):
         max_iter_txt = self.max_iter_edit.text().strip()
         if not expr or not a_txt or not b_txt or not tol_txt:
             raise ValueError('Complete f(x), a, b y tolerancia.')
-        a = float(a_txt); b = float(b_txt); tol = float(tol_txt)
+        a = parse_number_expr(a_txt)
+        b = parse_number_expr(b_txt)
+        tol = parse_number_expr(tol_txt)
         if a >= b:
             raise ValueError('Se requiere a < b.')
-        max_iter = int(max_iter_txt) if max_iter_txt else 100
+        max_iter = int(parse_number_expr(max_iter_txt)) if max_iter_txt else 100
         f = parse_function(expr)
         return f, a, b, tol, max_iter, expr
 
@@ -119,9 +118,9 @@ class NumericalMethodsWidget(QWidget):
             if not expr or not tol_txt or not x0_txt:
                 raise ValueError('Complete f(x), x0 y tolerancia (opcional max_iter).')
             f = parse_function(expr)
-            tol = float(tol_txt)
-            max_iter = int(max_iter_txt) if max_iter_txt else 100
-            x0 = float(x0_txt)
+            tol = parse_number_expr(tol_txt)
+            max_iter = int(parse_number_expr(max_iter_txt)) if max_iter_txt else 100
+            x0 = parse_number_expr(x0_txt)
 
             # df: None para usar derivada numérica por defecto
             res = newton_raphson(f, df=None, x0=x0, tol=tol, max_iter=max_iter)
@@ -141,10 +140,10 @@ class NumericalMethodsWidget(QWidget):
             if not expr or not tol_txt or not x0_txt or not x1_txt:
                 raise ValueError('Complete f(x), x0, x1 y tolerancia (opcional max_iter).')
             f = parse_function(expr)
-            tol = float(tol_txt)
-            max_iter = int(max_iter_txt) if max_iter_txt else 100
-            x0 = float(x0_txt)
-            x1 = float(x1_txt)
+            tol = parse_number_expr(tol_txt)
+            max_iter = int(parse_number_expr(max_iter_txt)) if max_iter_txt else 100
+            x0 = parse_number_expr(x0_txt)
+            x1 = parse_number_expr(x1_txt)
 
             res = metodo_secante(f, x0=x0, x1=x1, tol=tol, max_iter=max_iter)
             table = format_iterations_table(res, 'Secante')
